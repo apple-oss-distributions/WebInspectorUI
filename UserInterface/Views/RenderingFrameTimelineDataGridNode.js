@@ -23,59 +23,65 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.RenderingFrameTimelineDataGridNode = function(renderingFrameTimelineRecord, baseStartTime)
+WebInspector.RenderingFrameTimelineDataGridNode = class RenderingFrameTimelineDataGridNode extends WebInspector.TimelineDataGridNode
 {
-    WebInspector.TimelineDataGridNode.call(this, false, null);
+    constructor(renderingFrameTimelineRecord, baseStartTime)
+    {
+        super(false, null);
 
-    this._record = renderingFrameTimelineRecord;
-    this._baseStartTime = baseStartTime || 0;
-};
-
-WebInspector.RenderingFrameTimelineDataGridNode.IconStyleClassName = "icon";
-WebInspector.RenderingFrameTimelineDataGridNode.SubtitleStyleClassName = "subtitle";
-
-WebInspector.RenderingFrameTimelineDataGridNode.prototype = {
-    constructor: WebInspector.RenderingFrameTimelineDataGridNode,
-    __proto__: WebInspector.TimelineDataGridNode.prototype,
+        this._record = renderingFrameTimelineRecord;
+        this._baseStartTime = baseStartTime || 0;
+    }
 
     // Public
-
-    get record()
-    {
-        return this._record;
-    },
 
     get records()
     {
         return [this._record];
-    },
+    }
 
     get data()
     {
-        var scriptTime = this._record.durationForTask(WebInspector.RenderingFrameTimelineRecord.TaskType.Script);
-        var layoutTime = this._record.durationForTask(WebInspector.RenderingFrameTimelineRecord.TaskType.Layout);
-        var paintTime = this._record.durationForTask(WebInspector.RenderingFrameTimelineRecord.TaskType.Paint);
-        var otherTime = this._record.durationForTask(WebInspector.RenderingFrameTimelineRecord.TaskType.Other);
-        return {startTime: this._record.startTime, scriptTime, layoutTime, paintTime, otherTime, totalTime: this._record.duration};
-    },
+        if (!this._cachedData) {
+            let name = WebInspector.TimelineTabContentView.displayNameForRecord(this._record);
+            let scriptTime = this._record.durationForTask(WebInspector.RenderingFrameTimelineRecord.TaskType.Script);
+            let layoutTime = this._record.durationForTask(WebInspector.RenderingFrameTimelineRecord.TaskType.Layout);
+            let paintTime = this._record.durationForTask(WebInspector.RenderingFrameTimelineRecord.TaskType.Paint);
+            let otherTime = this._record.durationForTask(WebInspector.RenderingFrameTimelineRecord.TaskType.Other);
+            this._cachedData = {
+                name,
+                startTime: this._record.startTime,
+                totalTime: this._record.duration,
+                scriptTime,
+                layoutTime,
+                paintTime,
+                otherTime,
+            };
+        }
 
-    createCellContent: function(columnIdentifier, cell)
+        return this._cachedData;
+    }
+
+    createCellContent(columnIdentifier, cell)
     {
-        const emptyValuePlaceholderString = "\u2014";
         var value = this.data[columnIdentifier];
 
         switch (columnIdentifier) {
+        case "name":
+            cell.classList.add(...this.iconClassNames());
+            return value;
+
         case "startTime":
-            return isNaN(value) ? emptyValuePlaceholderString : Number.secondsToString(value - this._baseStartTime, true);
+            return isNaN(value) ? emDash : Number.secondsToString(value - this._baseStartTime, true);
 
         case "scriptTime":
         case "layoutTime":
         case "paintTime":
         case "otherTime":
         case "totalTime":
-            return (isNaN(value) || value === 0) ? emptyValuePlaceholderString : Number.secondsToString(value, true);
+            return (isNaN(value) || value === 0) ? emDash : Number.secondsToString(value, true);
         }
 
-        return WebInspector.TimelineDataGridNode.prototype.createCellContent.call(this, columnIdentifier, cell);
+        return super.createCellContent(columnIdentifier, cell);
     }
 };

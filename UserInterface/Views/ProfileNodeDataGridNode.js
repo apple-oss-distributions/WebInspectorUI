@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2014, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,63 +23,63 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.ProfileNodeDataGridNode = function(profileNode, baseStartTime, rangeStartTime, rangeEndTime)
+WebInspector.ProfileNodeDataGridNode = class ProfileNodeDataGridNode extends WebInspector.TimelineDataGridNode
 {
-    var hasChildren = !!profileNode.childNodes.length;
+    constructor(profileNode, baseStartTime, rangeStartTime, rangeEndTime)
+    {
+        var hasChildren = !!profileNode.childNodes.length;
 
-    WebInspector.TimelineDataGridNode.call(this, false, null, hasChildren);
+        super(false, null, hasChildren);
 
-    this._profileNode = profileNode;
-    this._baseStartTime = baseStartTime || 0;
-    this._rangeStartTime = rangeStartTime || 0;
-    this._rangeEndTime = typeof rangeEndTime === "number" ? rangeEndTime : Infinity;
+        this._profileNode = profileNode;
+        this._baseStartTime = baseStartTime || 0;
+        this._rangeStartTime = rangeStartTime || 0;
+        this._rangeEndTime = typeof rangeEndTime === "number" ? rangeEndTime : Infinity;
 
-    this._data = this._profileNode.computeCallInfoForTimeRange(this._rangeStartTime, this._rangeEndTime);
-    this._data.location = this._profileNode.sourceCodeLocation;
-};
+        this._cachedData = null;
 
-// FIXME: Move to a WebInspector.Object subclass and we can remove this.
-WebInspector.Object.deprecatedAddConstructorFunctions(WebInspector.ProfileNodeDataGridNode);
-
-WebInspector.ProfileNodeDataGridNode.IconStyleClassName = "icon";
-
-WebInspector.ProfileNodeDataGridNode.prototype = {
-    constructor: WebInspector.ProfileNodeDataGridNode,
-    __proto__: WebInspector.TimelineDataGridNode.prototype,
+        this.addEventListener("populate", this._populate, this);
+    }
 
     // Public
 
     get profileNode()
     {
         return this._profileNode;
-    },
+    }
 
     get records()
     {
         return null;
-    },
+    }
 
     get baseStartTime()
     {
         return this._baseStartTime;
-    },
+    }
 
     get rangeStartTime()
     {
         return this._rangeStartTime;
-    },
+    }
 
     get rangeEndTime()
     {
         return this._rangeEndTime;
-    },
+    }
 
     get data()
     {
-        return this._data;
-    },
+        if (!this._cachedData) {
+            this._cachedData = this._profileNode.computeCallInfoForTimeRange(this._rangeStartTime, this._rangeEndTime);
+            this._cachedData.name = this.displayName();
+            this._cachedData.location = this._profileNode.sourceCodeLocation;
+        }
 
-    updateRangeTimes: function(startTime, endTime)
+        return this._cachedData;
+    }
+
+    updateRangeTimes(startTime, endTime)
     {
         var oldRangeStartTime = this._rangeStartTime;
         var oldRangeEndTime = this._rangeEndTime;
@@ -93,38 +93,100 @@ WebInspector.ProfileNodeDataGridNode.prototype = {
         // We only need a refresh if the new range time changes the visible portion of this record.
         var profileStart = this._profileNode.startTime;
         var profileEnd = this._profileNode.endTime;
-        var oldStartBoundary = clamp(profileStart, oldRangeStartTime, profileEnd);
-        var oldEndBoundary = clamp(profileStart, oldRangeEndTime, profileEnd);
-        var newStartBoundary = clamp(profileStart, startTime, profileEnd);
-        var newEndBoundary = clamp(profileStart, endTime, profileEnd);
+        var oldStartBoundary = Number.constrain(oldRangeStartTime, profileStart, profileEnd);
+        var oldEndBoundary = Number.constrain(oldRangeEndTime, profileStart, profileEnd);
+        var newStartBoundary = Number.constrain(startTime, profileStart, profileEnd);
+        var newEndBoundary = Number.constrain(endTime, profileStart, profileEnd);
 
         if (oldStartBoundary !== newStartBoundary || oldEndBoundary !== newEndBoundary)
             this.needsRefresh();
-    },
+    }
 
-    refresh: function()
+    refresh()
     {
         this._data = this._profileNode.computeCallInfoForTimeRange(this._rangeStartTime, this._rangeEndTime);
         this._data.location = this._profileNode.sourceCodeLocation;
 
-        WebInspector.TimelineDataGridNode.prototype.refresh.call(this);
-    },
+        super.refresh();
+    }
 
-    createCellContent: function(columnIdentifier, cell)
+    createCellContent(columnIdentifier, cell)
     {
-        const emptyValuePlaceholderString = "\u2014";
         var value = this.data[columnIdentifier];
 
         switch (columnIdentifier) {
+        case "name":
+            cell.classList.add(...this.iconClassNames());
+            return value;
+
         case "startTime":
-            return isNaN(value) ? emptyValuePlaceholderString : Number.secondsToString(value - this._baseStartTime, true);
+            return isNaN(value) ? emDash : Number.secondsToString(value - this._baseStartTime, true);
 
         case "selfTime":
         case "totalTime":
         case "averageTime":
-            return isNaN(value) ? emptyValuePlaceholderString : Number.secondsToString(value, true);
+            return isNaN(value) ? emDash : Number.secondsToString(value, true);
         }
 
-        return WebInspector.TimelineDataGridNode.prototype.createCellContent.call(this, columnIdentifier, cell);
+        return super.createCellContent(columnIdentifier, cell);
+    }
+
+    displayName()
+    {
+        let title = this._profileNode.functionName;
+        if (!title) {
+            switch (this._profileNode.type) {
+            case WebInspector.ProfileNode.Type.Function:
+                title = WebInspector.UIString("(anonymous function)");
+                break;
+            case WebInspector.ProfileNode.Type.Program:
+                title = WebInspector.UIString("(program)");
+                break;
+            default:
+                title = WebInspector.UIString("(anonymous function)");
+                console.error("Unknown ProfileNode type: " + this._profileNode.type);
+            }
+        }
+
+        return title;
+    }
+
+    iconClassNames()
+    {
+        let className;
+        switch (this._profileNode.type) {
+        case WebInspector.ProfileNode.Type.Function:
+            className = WebInspector.CallFrameView.FunctionIconStyleClassName;
+            if (!this._profileNode.sourceCodeLocation)
+                className = WebInspector.CallFrameView.NativeIconStyleClassName;
+            break;
+        case WebInspector.ProfileNode.Type.Program:
+            className = WebInspector.TimelineRecordTreeElement.EvaluatedRecordIconStyleClass;
+            break;
+        }
+
+        console.assert(className);
+
+        // This is more than likely an event listener function with an "on" prefix and it is
+        // as long or longer than the shortest event listener name -- "oncut".
+        if (this._profileNode.functionName && this._profileNode.functionName.startsWith("on") && this._profileNode.functionName.length >= 5)
+            className = WebInspector.CallFrameView.EventListenerIconStyleClassName;
+
+        return [className];
+    }
+
+    // Private
+
+    _populate()
+    {
+        if (!this.shouldRefreshChildren)
+            return;
+
+        this.removeChildren();
+
+        for (let node of this._profileNode.childNodes)
+            this.appendChild(new WebInspector.ProfileNodeDataGridNode(node, this.baseStartTime, this.rangeStartTime, this.rangeEndTime));
+
+        this.removeEventListener("populate", this._populate, this);
     }
 };

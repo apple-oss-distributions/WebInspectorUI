@@ -44,12 +44,11 @@ WebInspector.TypeTokenAnnotator = class TypeTokenAnnotator extends WebInspector.
         var scriptSyntaxTree = this._script.scriptSyntaxTree;
 
         if (!scriptSyntaxTree) {
-            this._script.requestScriptSyntaxTree(function(syntaxTree) {
+            this._script.requestScriptSyntaxTree((syntaxTree) => {
                 // After requesting the tree, we still might get a null tree from a parse error.
                 if (syntaxTree)
                     this.insertAnnotations();
-            }.bind(this));
-
+            });
             return;
         }
 
@@ -60,21 +59,20 @@ WebInspector.TypeTokenAnnotator = class TypeTokenAnnotator extends WebInspector.
 
         var startTime = Date.now();
         var allNodesInRange = scriptSyntaxTree.filterByRange(startOffset, endOffset);
-        scriptSyntaxTree.updateTypes(allNodesInRange, function afterTypeUpdates(nodesWithUpdatedTypes) {
+        scriptSyntaxTree.updateTypes(allNodesInRange, (nodesWithUpdatedTypes) => {
             // Because this is an asynchronous call, we could have been deactivated before the callback function is called.
             if (!this.isActive())
                 return;
 
             nodesWithUpdatedTypes.forEach(this._insertTypeToken, this);
 
-            var totalTime = Date.now() - startTime;
-            var timeoutTime = Math.max(100, Math.min(2000, 8 * totalTime));
-
-            this._timeoutIdentifier = setTimeout(function timeoutUpdate() {
+            let totalTime = Date.now() - startTime;
+            let timeoutTime = Number.constrain(8 * totalTime, 500, 2000);
+            this._timeoutIdentifier = setTimeout(() => {
                 this._timeoutIdentifier = null;
                 this.insertAnnotations();
-            }.bind(this), timeoutTime);
-        }.bind(this));
+            }, timeoutTime);
+        });
     }
 
     clearAnnotations()
@@ -96,7 +94,7 @@ WebInspector.TypeTokenAnnotator = class TypeTokenAnnotator extends WebInspector.
             return;
         }
 
-        console.assert(node.type === WebInspector.ScriptSyntaxTree.NodeType.FunctionDeclaration || node.type === WebInspector.ScriptSyntaxTree.NodeType.FunctionExpression);
+        console.assert(node.type === WebInspector.ScriptSyntaxTree.NodeType.FunctionDeclaration || node.type === WebInspector.ScriptSyntaxTree.NodeType.FunctionExpression || node.type === WebInspector.ScriptSyntaxTree.NodeType.ArrowFunctionExpression);
 
         var functionReturnType = node.attachments.returnTypes;
         if (!functionReturnType || !functionReturnType.valid)
@@ -105,10 +103,9 @@ WebInspector.TypeTokenAnnotator = class TypeTokenAnnotator extends WebInspector.
         // If a function does not have an explicit return statement with an argument (i.e, "return x;" instead of "return;") 
         // then don't show a return type unless we think it's a constructor.
         var scriptSyntaxTree = this._script._scriptSyntaxTree;
-        if (!node.attachments.__typeToken && (scriptSyntaxTree.containsNonEmptyReturnStatement(node.body) || !WebInspector.TypeSet.fromPayload(functionReturnType.typeSet).isContainedIn(WebInspector.TypeSet.TypeBit.Undefined))) {
+        if (!node.attachments.__typeToken && (scriptSyntaxTree.containsNonEmptyReturnStatement(node.body) || !functionReturnType.typeSet.isContainedIn(WebInspector.TypeSet.TypeBit.Undefined))) {
             var functionName = node.id ? node.id.name : null;
-            var offset = node.isGetterOrSetter ? node.getterOrSetterRange[0] : node.range[0];
-            this._insertToken(offset, node, true, WebInspector.TypeTokenView.TitleType.ReturnStatement, functionName);
+            this._insertToken(node.typeProfilingReturnDivot, node, true, WebInspector.TypeTokenView.TitleType.ReturnStatement, functionName);
         }
 
         if (node.attachments.__typeToken)
@@ -149,6 +146,7 @@ WebInspector.TypeTokenAnnotator = class TypeTokenAnnotator extends WebInspector.
         var isMultiLineComment = false;
         var isSingleLineComment = false;
         var shouldIgnore = false;
+        const isArrowFunction = node.type === WebInspector.ScriptSyntaxTree.NodeType.ArrowFunctionExpression;
 
         function isLineTerminator(char)
         {
@@ -158,7 +156,10 @@ WebInspector.TypeTokenAnnotator = class TypeTokenAnnotator extends WebInspector.
             return char === "\n" || char === "\r" || char === "\u2028" || char === "\u2029";
         }
 
-        while ((sourceString[offset] !== ")" || shouldIgnore) && offset < sourceString.length) {
+        while (((!isArrowFunction && sourceString[offset] !== ")")
+                || (isArrowFunction && sourceString[offset] !== ">")
+                || shouldIgnore)
+               && offset < sourceString.length) {
             if (isSingleLineComment && isLineTerminator(sourceString[offset])) {
                 isSingleLineComment = false;
                 shouldIgnore = false;

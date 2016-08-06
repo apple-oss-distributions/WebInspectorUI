@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2013, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,72 +23,89 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.ScriptTimelineDataGridNode = function(scriptTimelineRecord, baseStartTime, rangeStartTime, rangeEndTime)
+WebInspector.ScriptTimelineDataGridNode = class ScriptTimelineDataGridNode extends WebInspector.TimelineDataGridNode
 {
-    WebInspector.TimelineDataGridNode.call(this, false, null);
+    constructor(scriptTimelineRecord, baseStartTime, rangeStartTime, rangeEndTime)
+    {
+        super(false, null);
 
-    this._record = scriptTimelineRecord;
-    this._baseStartTime = baseStartTime || 0;
-    this._rangeStartTime = rangeStartTime || 0;
-    this._rangeEndTime = typeof rangeEndTime === "number" ? rangeEndTime : Infinity;
-};
-
-// FIXME: Move to a WebInspector.Object subclass and we can remove this.
-WebInspector.Object.deprecatedAddConstructorFunctions(WebInspector.ScriptTimelineDataGridNode);
-
-WebInspector.ScriptTimelineDataGridNode.IconStyleClassName = "icon";
-
-WebInspector.ScriptTimelineDataGridNode.prototype = {
-    constructor: WebInspector.ScriptTimelineDataGridNode,
-    __proto__: WebInspector.TimelineDataGridNode.prototype,
+        this._record = scriptTimelineRecord;
+        this._baseStartTime = baseStartTime || 0;
+        this._rangeStartTime = rangeStartTime || 0;
+        this._rangeEndTime = typeof rangeEndTime === "number" ? rangeEndTime : Infinity;
+    }
 
     // Public
-
-    get record()
-    {
-        return this._record;
-    },
 
     get records()
     {
         return [this._record];
-    },
+    }
 
     get baseStartTime()
     {
         return this._baseStartTime;
-    },
+    }
 
     get rangeStartTime()
     {
         return this._rangeStartTime;
-    },
+    }
 
     get rangeEndTime()
     {
         return this._rangeEndTime;
-    },
+    }
 
     get data()
     {
-        var startTime = this._record.startTime;
-        var duration = this._record.startTime + this._record.duration - startTime;
-        var callFrameOrSourceCodeLocation = this._record.initiatorCallFrame || this._record.sourceCodeLocation;
+        if (!this._cachedData) {
+            var startTime = this._record.startTime;
+            var duration = this._record.startTime + this._record.duration - startTime;
+            var callFrameOrSourceCodeLocation = this._record.initiatorCallFrame || this._record.sourceCodeLocation;
 
-        // COMPATIBILITY (iOS8): Profiles included per-call information and can be finely partitioned.
-        if (this._record.profile) {
-            var oneRootNode = this._record.profile.topDownRootNodes[0];
-            if (oneRootNode && oneRootNode.calls) {
-                startTime = Math.max(this._rangeStartTime, this._record.startTime);
-                duration = Math.min(this._record.startTime + this._record.duration, this._rangeEndTime) - startTime;
+            // COMPATIBILITY (iOS 8): Profiles included per-call information and can be finely partitioned.
+            if (this._record.profile) {
+                var oneRootNode = this._record.profile.topDownRootNodes[0];
+                if (oneRootNode && oneRootNode.calls) {
+                    startTime = Math.max(this._rangeStartTime, this._record.startTime);
+                    duration = Math.min(this._record.startTime + this._record.duration, this._rangeEndTime) - startTime;
+                }
             }
+
+            this._cachedData = {
+                eventType: this._record.eventType,
+                startTime,
+                selfTime: duration,
+                totalTime: duration,
+                averageTime: duration,
+                callCount: this._record.callCountOrSamples,
+                location: callFrameOrSourceCodeLocation,
+            };
         }
 
-        return {eventType: this._record.eventType, startTime, selfTime: duration, totalTime: duration,
-            averageTime: duration, callCount: 1, location: callFrameOrSourceCodeLocation};
-    },
+        return this._cachedData;
+    }
 
-    updateRangeTimes: function(startTime, endTime)
+    get subtitle()
+    {
+        if (this._subtitle !== undefined)
+            return this._subtitle;
+
+        this._subtitle = "";
+
+        if (this._record.eventType === WebInspector.ScriptTimelineRecord.EventType.TimerInstalled) {
+            let timeoutString = Number.secondsToString(this._record.details.timeout / 1000);
+            if (this._record.details.repeating)
+                this._subtitle = WebInspector.UIString("%s interval").format(timeoutString);
+            else
+                this._subtitle = WebInspector.UIString("%s delay").format(timeoutString);
+        }
+
+        return this._subtitle;
+    }
+
+    updateRangeTimes(startTime, endTime)
     {
         var oldRangeStartTime = this._rangeStartTime;
         var oldRangeEndTime = this._rangeEndTime;
@@ -106,33 +123,63 @@ WebInspector.ScriptTimelineDataGridNode.prototype = {
         // We only need a refresh if the new range time changes the visible portion of this record.
         var recordStart = this._record.startTime;
         var recordEnd = this._record.startTime + this._record.duration;
-        var oldStartBoundary = clamp(recordStart, oldRangeStartTime, recordEnd);
-        var oldEndBoundary = clamp(recordStart, oldRangeEndTime, recordEnd);
-        var newStartBoundary = clamp(recordStart, startTime, recordEnd);
-        var newEndBoundary = clamp(recordStart, endTime, recordEnd);
+        var oldStartBoundary = Number.constrain(oldRangeStartTime, recordStart, recordEnd);
+        var oldEndBoundary = Number.constrain(oldRangeEndTime, recordStart, recordEnd);
+        var newStartBoundary = Number.constrain(startTime, recordStart, recordEnd);
+        var newEndBoundary = Number.constrain(endTime, recordStart, recordEnd);
 
         if (oldStartBoundary !== newStartBoundary || oldEndBoundary !== newEndBoundary)
             this.needsRefresh();
-    },
+    }
 
-    createCellContent: function(columnIdentifier, cell)
+    createCellContent(columnIdentifier, cell)
     {
-        const emptyValuePlaceholderString = "\u2014";
         var value = this.data[columnIdentifier];
 
         switch (columnIdentifier) {
-        case "eventType":
-            return WebInspector.ScriptTimelineRecord.EventType.displayName(value, this._record.details);
+        case "name":
+            cell.classList.add(...this.iconClassNames());
+            return this._createNameCellDocumentFragment();
 
         case "startTime":
-            return isNaN(value) ? emptyValuePlaceholderString : Number.secondsToString(value - this._baseStartTime, true);
+            return isNaN(value) ? emDash : Number.secondsToString(value - this._baseStartTime, true);
 
         case "selfTime":
         case "totalTime":
         case "averageTime":
-            return isNaN(value) ? emptyValuePlaceholderString : Number.secondsToString(value, true);
+            return isNaN(value) ? emDash : Number.secondsToString(value, true);
+
+        case "callCount":
+            return isNaN(value) ? emDash : value;
         }
 
-        return WebInspector.TimelineDataGridNode.prototype.createCellContent.call(this, columnIdentifier, cell);
+        return super.createCellContent(columnIdentifier, cell);
+    }
+
+    // Protected
+
+    filterableDataForColumn(columnIdentifier)
+    {
+        if (columnIdentifier === "name")
+            return [this.displayName(), this.subtitle];
+
+        return super.filterableDataForColumn(columnIdentifier);
+    }
+
+    // Private
+
+    _createNameCellDocumentFragment(cellElement)
+    {
+        let fragment = document.createDocumentFragment();
+        fragment.append(this.displayName());
+
+        if (this.subtitle) {
+            let subtitleElement = document.createElement("span");
+            subtitleElement.classList.add("subtitle");
+            subtitleElement.textContent = this.subtitle;
+            fragment.append(subtitleElement);
+        }
+
+        return fragment;
     }
 };

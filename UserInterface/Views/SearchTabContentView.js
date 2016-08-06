@@ -23,48 +23,60 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.SearchTabContentView = function(identifier)
+WebInspector.SearchTabContentView = class SearchTabContentView extends WebInspector.ContentBrowserTabContentView
 {
-    var tabBarItem = new WebInspector.TabBarItem("Images/SearchResults.svg", WebInspector.UIString("Search"));
-    var detailsSidebarPanels = [WebInspector.resourceDetailsSidebarPanel, WebInspector.probeDetailsSidebarPanel,
-        WebInspector.domNodeDetailsSidebarPanel, WebInspector.cssStyleDetailsSidebarPanel];
+    constructor(identifier)
+    {
+        let {image, title} = WebInspector.SearchTabContentView.tabInfo();
+        let tabBarItem = new WebInspector.TabBarItem(image, title);
+        let detailsSidebarPanels = [WebInspector.resourceDetailsSidebarPanel, WebInspector.probeDetailsSidebarPanel,
+            WebInspector.domNodeDetailsSidebarPanel, WebInspector.cssStyleDetailsSidebarPanel];
 
-    if (WebInspector.layerTreeDetailsSidebarPanel)
-        detailsSidebarPanels.push(WebInspector.layerTreeDetailsSidebarPanel);
+        if (WebInspector.layerTreeDetailsSidebarPanel)
+            detailsSidebarPanels.push(WebInspector.layerTreeDetailsSidebarPanel);
 
-    WebInspector.ContentBrowserTabContentView.call(this, identifier || "search", "search", tabBarItem, WebInspector.SearchSidebarPanel, detailsSidebarPanels);
-};
+        super(identifier || "search", "search", tabBarItem, WebInspector.SearchSidebarPanel, detailsSidebarPanels);
+    }
 
-WebInspector.SearchTabContentView.prototype = {
-    constructor: WebInspector.SearchTabContentView,
-    __proto__: WebInspector.ContentBrowserTabContentView.prototype,
+    static tabInfo()
+    {
+        return {
+            image: "Images/SearchResults.svg",
+            title: WebInspector.UIString("Search"),
+        };
+    }
+
+    static isEphemeral()
+    {
+        return true;
+    }
 
     // Public
 
     get type()
     {
         return WebInspector.SearchTabContentView.Type;
-    },
+    }
 
-    shown: function()
+    shown()
     {
-        WebInspector.ContentBrowserTabContentView.prototype.shown.call(this);
+        super.shown();
 
         // Perform on a delay because the field might not be visible yet.
         setTimeout(this.focusSearchField.bind(this));
-    },
+    }
 
-    canShowRepresentedObject: function(representedObject)
+    canShowRepresentedObject(representedObject)
     {
         return representedObject instanceof WebInspector.Resource || representedObject instanceof WebInspector.Script || representedObject instanceof WebInspector.DOMTree;
-    },
+    }
 
-    focusSearchField: function()
+    focusSearchField()
     {
         this.navigationSidebarPanel.focusSearchField();
-    },
+    }
 
-    performSearch: function(searchQuery)
+    performSearch(searchQuery)
     {
         this.navigationSidebarPanel.performSearch(searchQuery);
     }

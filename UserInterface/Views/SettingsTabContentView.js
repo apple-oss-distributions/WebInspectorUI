@@ -23,16 +23,25 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.SettingsTabContentView = function(identifier)
+WebInspector.SettingsTabContentView = class SettingsTabContentView extends WebInspector.TabContentView
 {
-    var tabBarItem = new WebInspector.TabBarItem("Images/Gear.svg", WebInspector.UIString("Settings"), true);
+    constructor(identifier)
+    {
+        var tabBarItem = new WebInspector.TabBarItem("Images/Gear.svg", WebInspector.UIString("Settings"), true);
 
-    WebInspector.TabContentView.call(this, identifier || "settings", "settings", tabBarItem);
-};
+        super(identifier || "settings", "settings", tabBarItem);
+    }
 
-WebInspector.SettingsTabContentView.prototype = {
-    constructor: WebInspector.SettingsTabContentView,
-    __proto__: WebInspector.TabContentView.prototype,
+    static isTabAllowed()
+    {
+        // FIXME (149284): This tab isn't ready to be shown yet.
+        return false;
+    }
+
+    static shouldSaveTab()
+    {
+        return false;
+    }
 
     // Public
 

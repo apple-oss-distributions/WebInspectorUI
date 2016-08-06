@@ -24,9 +24,10 @@
  */
 
 .item.resource.failed {
-    color: rgb(224, 16, 16) !important;
+    color: var(--error-text-color) !important;
 }
 
 .item.resource.failed .subtitle {
-    color: rgba(224, 16, 16, 0.7) !important;
+    color: var(--error-text-color) !important;
+    opacity: 0.7;
 }

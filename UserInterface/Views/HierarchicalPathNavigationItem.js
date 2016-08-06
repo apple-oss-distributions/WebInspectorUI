@@ -44,6 +44,16 @@ WebInspector.HierarchicalPathNavigationItem = class HierarchicalPathNavigationIt
         if (!newComponents)
             newComponents = [];
 
+        let componentsEqual = function(a, b) {
+            let getRepresentedObjects = (component) => component.representedObject;
+            let representedObjectsA = a.map(getRepresentedObjects);
+            let representedObjectsB = b.map(getRepresentedObjects);
+            return Array.shallowEqual(representedObjectsA, representedObjectsB);
+        };
+
+        if (this._components && componentsEqual(this._components, newComponents))
+            return;
+
         for (var i = 0; this._components && i < this._components.length; ++i)
             this._components[i].removeEventListener(WebInspector.HierarchicalPathComponent.Event.SiblingWasSelected, this._siblingPathComponentWasSelected, this);
 
@@ -61,7 +71,7 @@ WebInspector.HierarchicalPathNavigationItem = class HierarchicalPathNavigationIt
 
         // Update layout for the so other items can adjust to the extra space (or lack thereof) too.
         if (this.parentNavigationBar)
-            this.parentNavigationBar.updateLayoutSoon();
+            this.parentNavigationBar.needsLayout();
     }
 
     get lastComponent()
@@ -170,7 +180,7 @@ WebInspector.HierarchicalPathNavigationItem = class HierarchicalPathNavigationIt
         var i = middle;
 
         // Create a component that will represent the hidden components with a ellipse as the display name.
-        this._collapsedComponent = new WebInspector.HierarchicalPathComponent("\u2026", []);
+        this._collapsedComponent = new WebInspector.HierarchicalPathComponent(ellipsis, []);
         this._collapsedComponent.collapsed = true;
 
         // Insert it in the middle, it doesn't matter exactly where since the elements around it will be hidden soon.
@@ -219,8 +229,7 @@ WebInspector.HierarchicalPathNavigationItem = class HierarchicalPathNavigationIt
 
     // Protected
 
-    // FIXME: Should not be prefixed with an underscore.
-    get _additionalClassNames()
+    get additionalClassNames()
     {
         return ["hierarchical-path"];
     }

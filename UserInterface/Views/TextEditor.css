@@ -57,13 +57,13 @@
 
     z-index: -2;
 
-    border-image-source: -webkit-image-set(url(../Images/BreakpointInactive.png) 1x, url(../Images/BreakpointInactive@2x.png) 2x);
+    border-image-source: image-set(url(../Images/BreakpointInactive.png) 1x, url(../Images/BreakpointInactive@2x.png) 2x);
     border-image-slice: 3 7 3 3 fill;
     border-width: 3px 7px 3px 3px;
 }
 
 .text-editor > .CodeMirror .breakpoint-resolved .CodeMirror-linenumber::before {
-    border-image-source: -webkit-image-set(url(../Images/Breakpoint.png) 1x, url(../Images/Breakpoint@2x.png) 2x);
+    border-image-source: image-set(url(../Images/Breakpoint.png) 1x, url(../Images/Breakpoint@2x.png) 2x);
 }
 
 .text-editor > .CodeMirror .breakpoint-auto-continue:not(.breakpoint-disabled) .CodeMirror-linenumber::before {
@@ -93,29 +93,29 @@
 
     z-index: -1;
 
-    background-image: -webkit-image-set(url(../Images/InstructionPointer.png) 1x, url(../Images/InstructionPointer@2x.png) 2x);
+    background-image: image-set(url(../Images/InstructionPointer.png) 1x, url(../Images/InstructionPointer@2x.png) 2x);
     background-size: 9px 100%;
     background-repeat: no-repeat;
 }
 
 .text-editor > .CodeMirror .execution-line {
-    background-color: rgb(217, 234, 208) !important;
+    background-color: hsl(99, 38%, 86%) !important;
 }
 
 .text-editor > .CodeMirror .highlighted {
-    -webkit-animation: "text-editor-highlight-fadeout" 2s;
+    animation: "text-editor-highlight-fadeout" 2s;
 }
 
-@-webkit-keyframes text-editor-highlight-fadeout {
+@keyframes text-editor-highlight-fadeout {
     from { background-color: highlight; }
 }
 
 .text-editor > .CodeMirror .hovered-expression-highlight {
-    -webkit-animation: "text-editor-hovered-expression-highlight-fadeout" 2s;
-    background-color: rgba(0, 0, 0, 0.1);
+    animation: "text-editor-hovered-expression-highlight-fadeout" 2s;
+    background-color: hsla(0, 0%, 0%, 0.1);
 }
 
-@-webkit-keyframes text-editor-hovered-expression-highlight-fadeout {
+@keyframes text-editor-hovered-expression-highlight-fadeout {
     from { background-color: highlight; }
-    to { background-color: rgba(0, 0, 0, 0.1); }
+    to { background-color: hsla(0, 0%, 0%, 0.1); }
 }

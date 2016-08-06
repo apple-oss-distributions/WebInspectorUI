@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2013, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,80 +23,122 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.OverviewTimelineView = function(recording, extraArguments)
+WebInspector.OverviewTimelineView = class OverviewTimelineView extends WebInspector.TimelineView
 {
-    WebInspector.TimelineView.call(this, recording, extraArguments);
+    constructor(recording, extraArguments)
+    {
+        super(recording, extraArguments);
 
-    this._recording = recording;
+        this._recording = recording;
 
-    var columns = {"graph": {width: "100%"}};
+        let columns = {name: {}, graph: {}};
 
-    this._dataGrid = new WebInspector.DataGrid(columns);
-    this._dataGrid.addEventListener(WebInspector.DataGrid.Event.SelectedNodeChanged, this._dataGridNodeSelected, this);
-    this._dataGrid.element.classList.add("no-header");
+        columns.name.title = WebInspector.UIString("Name");
+        columns.name.width = "20%";
+        columns.name.icon = true;
+        columns.name.disclosure = true;
 
-    this._treeOutlineDataGridSynchronizer = new WebInspector.TreeOutlineDataGridSynchronizer(this.navigationSidebarTreeOutline, this._dataGrid);
+        this._timelineRuler = new WebInspector.TimelineRuler;
+        this._timelineRuler.allowsClippedLabels = true;
 
-    this._timelineRuler = new WebInspector.TimelineRuler;
-    this._timelineRuler.allowsClippedLabels = true;
-    this.element.appendChild(this._timelineRuler.element);
+        columns.graph.width = "80%";
+        columns.graph.headerView = this._timelineRuler;
 
-    this._currentTimeMarker = new WebInspector.TimelineMarker(0, WebInspector.TimelineMarker.Type.CurrentTime);
-    this._timelineRuler.addMarker(this._currentTimeMarker);
+        this._dataGrid = new WebInspector.DataGrid(columns);
 
-    this.element.classList.add("overview");
-    this.element.appendChild(this._dataGrid.element);
+        this.setupDataGrid(this._dataGrid);
 
-    this._networkTimeline = recording.timelines.get(WebInspector.TimelineRecord.Type.Network);
-    this._networkTimeline.addEventListener(WebInspector.Timeline.Event.RecordAdded, this._networkTimelineRecordAdded, this);
+        this._currentTimeMarker = new WebInspector.TimelineMarker(0, WebInspector.TimelineMarker.Type.CurrentTime);
+        this._timelineRuler.addMarker(this._currentTimeMarker);
 
-    recording.addEventListener(WebInspector.TimelineRecording.Event.SourceCodeTimelineAdded, this._sourceCodeTimelineAdded, this);
+        this.element.classList.add("overview");
+        this.addSubview(this._dataGrid);
 
-    this._pendingRepresentedObjects = [];
-};
+        this._networkTimeline = recording.timelines.get(WebInspector.TimelineRecord.Type.Network);
+        if (this._networkTimeline)
+            this._networkTimeline.addEventListener(WebInspector.Timeline.Event.RecordAdded, this._networkTimelineRecordAdded, this);
 
-WebInspector.OverviewTimelineView.prototype = {
-    constructor: WebInspector.OverviewTimelineView,
-    __proto__: WebInspector.TimelineView.prototype,
+        recording.addEventListener(WebInspector.TimelineRecording.Event.SourceCodeTimelineAdded, this._sourceCodeTimelineAdded, this);
+        recording.addEventListener(WebInspector.TimelineRecording.Event.MarkerAdded, this._markerAdded, this);
+        recording.addEventListener(WebInspector.TimelineRecording.Event.Reset, this._recordingReset, this);
+
+        this._pendingRepresentedObjects = [];
+        this._resourceDataGridNodeMap = new Map;
+    }
 
     // Public
-
-    get navigationSidebarTreeOutlineLabel()
-    {
-        return WebInspector.UIString("Timeline Events");
-    },
 
     get secondsPerPixel()
     {
         return this._timelineRuler.secondsPerPixel;
-    },
+    }
 
     set secondsPerPixel(x)
     {
         this._timelineRuler.secondsPerPixel = x;
-    },
+    }
 
-    shown: function()
+    shown()
     {
-        WebInspector.ContentView.prototype.shown.call(this);
+        super.shown();
 
-        this._treeOutlineDataGridSynchronizer.synchronize();
-    },
+        this._timelineRuler.updateLayout(WebInspector.View.LayoutReason.Resize);
+    }
 
-    closed: function()
+    closed()
     {
-        this._networkTimeline.removeEventListener(null, null, this);
+        if (this._networkTimeline)
+            this._networkTimeline.removeEventListener(null, null, this);
         this._recording.removeEventListener(null, null, this);
-    },
+    }
 
-    updateLayout: function()
+    get selectionPathComponents()
     {
-        WebInspector.TimelineView.prototype.updateLayout.call(this);
+        let dataGridNode = this._dataGrid.selectedNode;
+        if (!dataGridNode || dataGridNode.hidden)
+            return null;
 
-        var oldZeroTime = this._timelineRuler.zeroTime;
-        var oldStartTime = this._timelineRuler.startTime;
-        var oldEndTime = this._timelineRuler.endTime;
-        var oldCurrentTime = this._currentTimeMarker.time;
+        let pathComponents = [];
+
+        while (dataGridNode && !dataGridNode.root) {
+            console.assert(dataGridNode instanceof WebInspector.TimelineDataGridNode);
+            if (dataGridNode.hidden)
+                return null;
+
+            let pathComponent = new WebInspector.TimelineDataGridNodePathComponent(dataGridNode);
+            pathComponent.addEventListener(WebInspector.HierarchicalPathComponent.Event.SiblingWasSelected, this.dataGridNodePathComponentSelected, this);
+            pathComponents.unshift(pathComponent);
+            dataGridNode = dataGridNode.parent;
+        }
+
+        return pathComponents;
+    }
+
+    reset()
+    {
+        super.reset();
+
+        this._dataGrid.removeChildren();
+
+        this._pendingRepresentedObjects = [];
+    }
+
+    // Protected
+
+    dataGridNodePathComponentSelected(event)
+    {
+        let dataGridNode = event.data.pathComponent.timelineDataGridNode;
+        console.assert(dataGridNode.dataGrid === this._dataGrid);
+
+        dataGridNode.revealAndSelect();
+    }
+
+    layout()
+    {
+        let oldZeroTime = this._timelineRuler.zeroTime;
+        let oldStartTime = this._timelineRuler.startTime;
+        let oldEndTime = this._timelineRuler.endTime;
+        let oldCurrentTime = this._currentTimeMarker.time;
 
         this._timelineRuler.zeroTime = this.zeroTime;
         this._timelineRuler.startTime = this.startTime;
@@ -106,214 +148,114 @@ WebInspector.OverviewTimelineView.prototype = {
         // The TimelineDataGridNode graphs are positioned with percentages, so they auto resize with the view.
         // We only need to refresh the graphs when the any of the times change.
         if (this.zeroTime !== oldZeroTime || this.startTime !== oldStartTime || this.endTime !== oldEndTime || this.currentTime !== oldCurrentTime) {
-            var dataGridNode = this._dataGrid.children[0];
+            let dataGridNode = this._dataGrid.children[0];
             while (dataGridNode) {
                 dataGridNode.refreshGraph();
                 dataGridNode = dataGridNode.traverseNextNode(true, null, true);
             }
         }
 
-        this._timelineRuler.updateLayout();
-
         this._processPendingRepresentedObjects();
-    },
-
-    get selectionPathComponents()
-    {
-        var dataGridNode = this._dataGrid.selectedNode;
-        if (!dataGridNode)
-            return null;
-
-        var pathComponents = [];
-
-        while (dataGridNode && !dataGridNode.root) {
-            var treeElement = this._treeOutlineDataGridSynchronizer.treeElementForDataGridNode(dataGridNode);
-            console.assert(treeElement);
-            if (!treeElement)
-                break;
-
-            if (treeElement.hidden)
-                return null;
-
-            var pathComponent = new WebInspector.GeneralTreeElementPathComponent(treeElement);
-            pathComponent.addEventListener(WebInspector.HierarchicalPathComponent.Event.SiblingWasSelected, this.treeElementPathComponentSelected, this);
-            pathComponents.unshift(pathComponent);
-            dataGridNode = dataGridNode.parent;
-        }
-
-        return pathComponents;
-    },
-
-    // Protected
-
-    treeElementPathComponentSelected: function(event)
-    {
-        var dataGridNode = this._treeOutlineDataGridSynchronizer.dataGridNodeForTreeElement(event.data.pathComponent.generalTreeElement);
-        if (!dataGridNode)
-            return;
-        dataGridNode.revealAndSelect();
-    },
-
-    canShowContentViewForTreeElement: function(treeElement)
-    {
-        if (treeElement instanceof WebInspector.ResourceTreeElement || treeElement instanceof WebInspector.ScriptTreeElement)
-            return true;
-        return WebInspector.TimelineView.prototype.canShowContentViewForTreeElement(treeElement);
-    },
-
-    showContentViewForTreeElement: function(treeElement)
-    {
-        if (treeElement instanceof WebInspector.ResourceTreeElement || treeElement instanceof WebInspector.ScriptTreeElement) {
-            WebInspector.showSourceCode(treeElement.representedObject);
-            return;
-        }
-
-        if (!(treeElement instanceof WebInspector.SourceCodeTimelineTreeElement)) {
-            console.error("Unknown tree element selected.");
-            return;
-        }
-
-        if (!treeElement.sourceCodeTimeline.sourceCodeLocation) {
-            this.timelineSidebarPanel.showTimelineOverview();
-            return;
-        }
-
-        WebInspector.showOriginalOrFormattedSourceCodeLocation(treeElement.sourceCodeTimeline.sourceCodeLocation);
-    },
+    }
 
     // Private
 
-    _compareTreeElementsByDetails: function(a, b)
+    _compareDataGridNodesByStartTime(a, b)
     {
-        if (a instanceof WebInspector.SourceCodeTimelineTreeElement && b instanceof WebInspector.ResourceTreeElement)
-            return -1;
-
-        if (a instanceof WebInspector.ResourceTreeElement && b instanceof WebInspector.SourceCodeTimelineTreeElement)
-            return 1;
-
-        if (a instanceof WebInspector.SourceCodeTimelineTreeElement && b instanceof WebInspector.SourceCodeTimelineTreeElement) {
-            var aTimeline = a.sourceCodeTimeline;
-            var bTimeline = b.sourceCodeTimeline;
-
-            if (!aTimeline.sourceCodeLocation && !bTimeline.sourceCodeLocation) {
-                if (aTimeline.recordType !== bTimeline.recordType)
-                    return aTimeline.recordType.localeCompare(bTimeline.recordType);
-
-                return a.mainTitle.localeCompare(b.mainTitle);
-            }
-
-            if (!aTimeline.sourceCodeLocation || !bTimeline.sourceCodeLocation)
-                return !!aTimeline.sourceCodeLocation - !!bTimeline.sourceCodeLocation;
-
-            if (aTimeline.sourceCodeLocation.lineNumber !== bTimeline.sourceCodeLocation.lineNumber)
-                return aTimeline.sourceCodeLocation.lineNumber - bTimeline.sourceCodeLocation.lineNumber;
-
-            return aTimeline.sourceCodeLocation.columnNumber - bTimeline.sourceCodeLocation.columnNumber;
-        }
-
-        // Fallback to comparing by start time for ResourceTreeElement or anything else.
-        return this._compareTreeElementsByStartTime(a, b);
-    },
-
-    _compareTreeElementsByStartTime: function(a, b)
-    {
-        function getStartTime(treeElement)
+        function getStartTime(dataGridNode)
         {
-            if (treeElement instanceof WebInspector.ResourceTreeElement)
-                return treeElement.resource.firstTimestamp;
-            if (treeElement instanceof WebInspector.SourceCodeTimelineTreeElement)
-                return treeElement.sourceCodeTimeline.startTime;
+            if (dataGridNode instanceof WebInspector.ResourceTimelineDataGridNode)
+                return dataGridNode.resource.firstTimestamp;
+            if (dataGridNode instanceof WebInspector.SourceCodeTimelineTimelineDataGridNode)
+                return dataGridNode.sourceCodeTimeline.startTime;
 
-            console.error("Unknown tree element.");
+            console.error("Unknown data grid node.", dataGridNode);
             return 0;
         }
 
-        var result = getStartTime(a) - getStartTime(b);
+        let result = getStartTime(a) - getStartTime(b);
         if (result)
             return result;
 
         // Fallback to comparing titles.
-        return a.mainTitle.localeCompare(b.mainTitle);
-    },
+        return a.displayName().localeCompare(b.displayName());
+    }
 
-    _insertTreeElement: function(treeElement, parentTreeElement)
+    _insertDataGridNode(dataGridNode, parentDataGridNode)
     {
-        console.assert(treeElement);
-        console.assert(!treeElement.parent);
-        console.assert(parentTreeElement);
+        console.assert(dataGridNode);
+        console.assert(!dataGridNode.parent);
 
-        parentTreeElement.insertChild(treeElement, insertionIndexForObjectInListSortedByFunction(treeElement, parentTreeElement.children, this._compareTreeElementsByStartTime.bind(this)));
-    },
+        if (parentDataGridNode)
+            parentDataGridNode.insertChild(dataGridNode, insertionIndexForObjectInListSortedByFunction(dataGridNode, parentDataGridNode.children, this._compareDataGridNodesByStartTime.bind(this)));
+        else
+            this._dataGrid.appendChild(dataGridNode);
+    }
 
-    _addResourceToTreeIfNeeded: function(resource)
+    _addResourceToDataGridIfNeeded(resource)
     {
         console.assert(resource);
         if (!resource)
             return null;
 
-        var treeElement = this.navigationSidebarTreeOutline.findTreeElement(resource);
-        if (treeElement)
-            return treeElement;
+        // FIXME: replace with this._dataGrid.findDataGridNode(resource) once <https://webkit.org/b/155305> is fixed.
+        let dataGridNode = this._resourceDataGridNodeMap.get(resource);
+        if (dataGridNode)
+            return dataGridNode;
 
-        var parentFrame = resource.parentFrame;
+        let parentFrame = resource.parentFrame;
         if (!parentFrame)
             return;
 
-        var expandedByDefault = false;
+        let resourceTimelineRecord = this._networkTimeline ? this._networkTimeline.recordForResource(resource) : null;
+        if (!resourceTimelineRecord)
+            resourceTimelineRecord = new WebInspector.ResourceTimelineRecord(resource);
+
+        let resourceDataGridNode = new WebInspector.ResourceTimelineDataGridNode(resourceTimelineRecord, true, this);
+        this._resourceDataGridNodeMap.set(resource, resourceDataGridNode);
+
+        let expandedByDefault = false;
         if (parentFrame.mainResource === resource || parentFrame.provisionalMainResource === resource) {
             parentFrame = parentFrame.parentFrame;
             expandedByDefault = !parentFrame; // Main frame expands by default.
         }
 
-        var resourceTreeElement = new WebInspector.ResourceTreeElement(resource);
         if (expandedByDefault)
-            resourceTreeElement.expand();
+            resourceDataGridNode.expand();
 
-        var resourceTimelineRecord = this._networkTimeline ? this._networkTimeline.recordForResource(resource) : null;
-        if (!resourceTimelineRecord)
-            resourceTimelineRecord = new WebInspector.ResourceTimelineRecord(resource);
-
-        var resourceDataGridNode = new WebInspector.ResourceTimelineDataGridNode(resourceTimelineRecord, true, this);
-        this._treeOutlineDataGridSynchronizer.associate(resourceTreeElement, resourceDataGridNode);
-
-        var parentTreeElement = this.navigationSidebarTreeOutline;
+        let parentDataGridNode = null;
         if (parentFrame) {
             // Find the parent main resource, adding it if needed, to append this resource as a child.
-            var parentResource = parentFrame.provisionalMainResource || parentFrame.mainResource;
+            let parentResource = parentFrame.provisionalMainResource || parentFrame.mainResource;
 
-            parentTreeElement = this._addResourceToTreeIfNeeded(parentResource);
-            console.assert(parentTreeElement);
-            if (!parentTreeElement)
+            parentDataGridNode = this._addResourceToDataGridIfNeeded(parentResource);
+            console.assert(parentDataGridNode);
+            if (!parentDataGridNode)
                 return;
         }
 
-        this._insertTreeElement(resourceTreeElement, parentTreeElement);
+        this._insertDataGridNode(resourceDataGridNode, parentDataGridNode);
 
-        return resourceTreeElement;
-    },
+        return resourceDataGridNode;
+    }
 
-    _addSourceCodeTimeline: function(sourceCodeTimeline)
+    _addSourceCodeTimeline(sourceCodeTimeline)
     {
-        var parentTreeElement = sourceCodeTimeline.sourceCodeLocation ? this._addResourceToTreeIfNeeded(sourceCodeTimeline.sourceCode) : this.navigationSidebarTreeOutline;
-        console.assert(parentTreeElement);
-        if (!parentTreeElement)
-            return;
+        let parentDataGridNode = sourceCodeTimeline.sourceCodeLocation ? this._addResourceToDataGridIfNeeded(sourceCodeTimeline.sourceCode) : null;
+        let sourceCodeTimelineDataGridNode = new WebInspector.SourceCodeTimelineTimelineDataGridNode(sourceCodeTimeline, this);
+        this._resourceDataGridNodeMap.set(sourceCodeTimeline, sourceCodeTimelineDataGridNode);
 
-        var sourceCodeTimelineTreeElement = new WebInspector.SourceCodeTimelineTreeElement(sourceCodeTimeline);
-        var sourceCodeTimelineDataGridNode = new WebInspector.SourceCodeTimelineTimelineDataGridNode(sourceCodeTimeline, this);
+        this._insertDataGridNode(sourceCodeTimelineDataGridNode, parentDataGridNode);
+    }
 
-        this._treeOutlineDataGridSynchronizer.associate(sourceCodeTimelineTreeElement, sourceCodeTimelineDataGridNode);
-        this._insertTreeElement(sourceCodeTimelineTreeElement, parentTreeElement);
-    },
-
-    _processPendingRepresentedObjects: function()
+    _processPendingRepresentedObjects()
     {
-        if (!this._pendingRepresentedObjects || !this._pendingRepresentedObjects.length)
+        if (!this._pendingRepresentedObjects.length)
             return;
 
         for (var representedObject of this._pendingRepresentedObjects) {
             if (representedObject instanceof WebInspector.Resource)
-                this._addResourceToTreeIfNeeded(representedObject);
+                this._addResourceToDataGridIfNeeded(representedObject);
             else if (representedObject instanceof WebInspector.SourceCodeTimeline)
                 this._addSourceCodeTimeline(representedObject);
             else
@@ -321,9 +263,9 @@ WebInspector.OverviewTimelineView.prototype = {
         }
 
         this._pendingRepresentedObjects = [];
-    },
+    }
 
-    _networkTimelineRecordAdded: function(event)
+    _networkTimelineRecordAdded(event)
     {
         var resourceTimelineRecord = event.data.record;
         console.assert(resourceTimelineRecord instanceof WebInspector.ResourceTimelineRecord);
@@ -334,9 +276,9 @@ WebInspector.OverviewTimelineView.prototype = {
 
         // We don't expect to have any source code timelines yet. Those should be added with _sourceCodeTimelineAdded.
         console.assert(!this._recording.sourceCodeTimelinesForSourceCode(resourceTimelineRecord.resource).length);
-    },
+    }
 
-    _sourceCodeTimelineAdded: function(event)
+    _sourceCodeTimelineAdded(event)
     {
         var sourceCodeTimeline = event.data.sourceCodeTimeline;
         console.assert(sourceCodeTimeline);
@@ -346,10 +288,16 @@ WebInspector.OverviewTimelineView.prototype = {
         this._pendingRepresentedObjects.push(sourceCodeTimeline);
 
         this.needsLayout();
-    },
+    }
 
-    _dataGridNodeSelected: function(event)
+    _markerAdded(event)
     {
-        this.dispatchEventToListeners(WebInspector.ContentView.Event.SelectionPathComponentsDidChange);
+        this._timelineRuler.addMarker(event.data.marker);
+    }
+
+    _recordingReset(event)
+    {
+        this._timelineRuler.clearMarkers();
+        this._timelineRuler.addMarker(this._currentTimeMarker);
     }
 };

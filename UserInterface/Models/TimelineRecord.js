@@ -39,6 +39,7 @@ WebInspector.TimelineRecord = class TimelineRecord extends WebInspector.Object
         this._endTime = endTime || NaN;
         this._callFrames = callFrames || null;
         this._sourceCodeLocation = sourceCodeLocation || null;
+        this._children = [];
     }
 
     // Public
@@ -121,6 +122,24 @@ WebInspector.TimelineRecord = class TimelineRecord extends WebInspector.Object
         return this._sourceCodeLocation;
     }
 
+    get parent()
+    {
+        return this._parent;
+    }
+
+    set parent(x)
+    {
+        if (this._parent === x)
+            return;
+
+        this._parent = x;
+    }
+
+    get children()
+    {
+        return this._children;
+    }
+
     saveIdentityToCookie(cookie)
     {
         cookie[WebInspector.TimelineRecord.SourceCodeURLCookieKey] = this._sourceCodeLocation ? this._sourceCodeLocation.sourceCode.url ? this._sourceCodeLocation.sourceCode.url.hash : null : null;
@@ -138,7 +157,9 @@ WebInspector.TimelineRecord.Type = {
     Network: "timeline-record-type-network",
     Layout: "timeline-record-type-layout",
     Script: "timeline-record-type-script",
-    RenderingFrame: "timeline-record-type-rendering-frame"
+    RenderingFrame: "timeline-record-type-rendering-frame",
+    Memory: "timeline-record-type-memory",
+    HeapAllocations: "timeline-record-type-heap-allocations",
 };
 
 WebInspector.TimelineRecord.TypeIdentifier = "timeline-record";

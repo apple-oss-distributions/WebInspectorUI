@@ -149,7 +149,7 @@ WebInspector.BreakpointActionView = class BreakpointActionView extends WebInspec
             editorElement.classList.add("breakpoint-action-eval-editor");
             editorElement.classList.add(WebInspector.SyntaxHighlightedStyleClassName);
 
-            this._codeMirror = CodeMirror(editorElement, {
+            this._codeMirror = WebInspector.CodeMirrorEditor.create(editorElement, {
                 lineWrapping: true,
                 mode: "text/javascript",
                 indentWithTabs: true,
@@ -161,15 +161,17 @@ WebInspector.BreakpointActionView = class BreakpointActionView extends WebInspec
             this._codeMirror.on("viewportChange", this._codeMirrorViewportChanged.bind(this));
             this._codeMirror.on("blur", this._codeMirrorBlurred.bind(this));
 
+            this._codeMirrorViewport = {from: null, to: null};
+
             var completionController = new WebInspector.CodeMirrorCompletionController(this._codeMirror);
             completionController.addExtendedCompletionProvider("javascript", WebInspector.javaScriptRuntimeCompletionProvider);
 
             // CodeMirror needs a refresh after the popover displays, to layout, otherwise it doesn't appear.
-            setTimeout(function() {
+            setTimeout(() => {
                 this._codeMirror.refresh();
                 if (!omitFocus)
                     this._codeMirror.focus();
-            }.bind(this), 0);
+            }, 0);
 
             break;
 
@@ -195,8 +197,13 @@ WebInspector.BreakpointActionView = class BreakpointActionView extends WebInspec
         this._action.data = (this._codeMirror.getValue() || "").trim();
     }
 
-    _codeMirrorViewportChanged(event)
+    _codeMirrorViewportChanged(event, from, to)
     {
+        if (this._codeMirrorViewport.from === from && this._codeMirrorViewport.to === to)
+            return;
+
+        this._codeMirrorViewport.from = from;
+        this._codeMirrorViewport.to = to;
         this._delegate.breakpointActionViewResized(this);
     }
 };

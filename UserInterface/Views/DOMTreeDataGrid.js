@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2013 Adobe Systems Inc. All rights reserved.
+ * Copyright (C) 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,33 +24,36 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.DOMTreeDataGrid = function() {
-    WebInspector.DataGrid.call(this, {
-        name: { title: WebInspector.UIString("Node"), sortable: false }
-    });
+WebInspector.DOMTreeDataGrid = class DOMTreeDataGrid extends WebInspector.DataGrid
+{
+    constructor()
+    {
+        super({
+            name: {title: WebInspector.UIString("Node"), sortable: false, icon: true}
+        });
 
-    this._previousHoveredElement = null;
+        this._previousHoveredElement = null;
 
-    this.element.classList.add("inline", "dom-tree-data-grid");
+        this.inline = true;
 
-    this.element.addEventListener("mousemove", this._onmousemove.bind(this), false);
-    this.element.addEventListener("mouseout", this._onmouseout.bind(this), false);
-};
+        this.element.classList.add("dom-tree-data-grid");
 
-WebInspector.DOMTreeDataGrid.prototype = {
-    constructor: WebInspector.DOMTreeDataGrid,
-    __proto__: WebInspector.DataGrid.prototype,
+        this.element.addEventListener("mousemove", this._onmousemove.bind(this), false);
+        this.element.addEventListener("mouseout", this._onmouseout.bind(this), false);
+    }
 
-    _onmousemove: function(event)
+    // Private
+
+    _onmousemove(event)
     {
         var gridNode = this.dataGridNodeFromNode(event.target);
         if (!gridNode || this._previousHoveredElement === gridNode.domNode)
             return;
         this._previousHoveredElement = gridNode.domNode;
         WebInspector.domTreeManager.highlightDOMNode(gridNode.domNode.id);
-    },
+    }
 
-    _onmouseout: function(event) {
+    _onmouseout(event) {
         if (!this._previousHoveredElement)
             return;
         WebInspector.domTreeManager.hideDOMNodeHighlight();

@@ -23,26 +23,38 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.StorageTabContentView = function(identifier)
+WebInspector.StorageTabContentView = class StorageTabContentView extends WebInspector.ContentBrowserTabContentView
 {
-    var tabBarItem = new WebInspector.TabBarItem("Images/Storage.svg", WebInspector.UIString("Storage"));
-    var detailsSidebarPanels = [WebInspector.applicationCacheDetailsSidebarPanel];
+    constructor(identifier)
+    {
+        let {image, title} = WebInspector.StorageTabContentView.tabInfo();
+        let tabBarItem = new WebInspector.TabBarItem(image, title);
+        let detailsSidebarPanels = [WebInspector.applicationCacheDetailsSidebarPanel];
 
-    WebInspector.ContentBrowserTabContentView.call(this, identifier || "storage", "storage", tabBarItem, WebInspector.StorageSidebarPanel, detailsSidebarPanels);
-};
+        super(identifier || "storage", "storage", tabBarItem, WebInspector.StorageSidebarPanel, detailsSidebarPanels);
+    }
 
-WebInspector.StorageTabContentView.prototype = {
-    constructor: WebInspector.StorageTabContentView,
-    __proto__: WebInspector.ContentBrowserTabContentView.prototype,
+    static tabInfo()
+    {
+        return {
+            image: "Images/Storage.svg",
+            title: WebInspector.UIString("Storage"),
+        };
+    }
+
+    static isTabAllowed()
+    {
+        return !!window.DOMStorageAgent || !!window.DatabaseAgent || !!window.IndexedDBAgent;
+    }
 
     // Public
 
     get type()
     {
         return WebInspector.StorageTabContentView.Type;
-    },
+    }
 
-    canShowRepresentedObject: function(representedObject)
+    canShowRepresentedObject(representedObject)
     {
         return representedObject instanceof WebInspector.DOMStorageObject || representedObject instanceof WebInspector.CookieStorageObject ||
             representedObject instanceof WebInspector.DatabaseTableObject || representedObject instanceof WebInspector.DatabaseObject ||

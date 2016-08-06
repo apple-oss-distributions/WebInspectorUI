@@ -33,7 +33,7 @@
     width: 238px;
     height: 21px;
 
-    border: 1px solid rgb(146, 146, 146);
+    border: 1px solid hsl(0, 0%, 57%);
 }
 
 .gradient-slider > canvas {
@@ -62,7 +62,7 @@
     width: 20px;
     height: 26px;
 
-    background-image: -webkit-image-set(url(../Images/GradientStop.png) 1x, url(../Images/GradientStop@2x.png) 2x);
+    background-image: image-set(url(../Images/GradientStop.png) 1x, url(../Images/GradientStop@2x.png) 2x);
 
     transition: opacity 350ms;
 }
@@ -73,7 +73,7 @@
 }
 
 .gradient-slider-knob.selected {
-    background-image: -webkit-image-set(url(../Images/GradientStopSelected.png) 1x, url(../Images/GradientStopSelected@2x.png) 2x);
+    background-image: image-set(url(../Images/GradientStopSelected.png) 1x, url(../Images/GradientStopSelected@2x.png) 2x);
 }
 
 .gradient-slider-knob.detaching {
@@ -99,7 +99,7 @@
 }
 
 .gradient-slider-knob > div {
-    border: 1px solid rgba(0, 0, 0, 0.25);
+    border: 1px solid hsla(0, 0%, 0%, 0.25);
 
     background-color: white;
 }

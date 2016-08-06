@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2009, 2010 Google Inc. All rights reserved.
  * Copyright (C) 2009 Joseph Pecoraro
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2013, 2016 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -32,21 +32,24 @@
 
 WebInspector.DOMNode = class DOMNode extends WebInspector.Object
 {
-    constructor(domAgent, doc, isInShadowTree, payload)
+    constructor(domTreeManager, doc, isInShadowTree, payload)
     {
         super();
 
-        this._domAgent = domAgent;
+        this._domTreeManager = domTreeManager;
         this._isInShadowTree = isInShadowTree;
 
         this.id = payload.nodeId;
-        domAgent._idToDOMNode[this.id] = this;
+        this._domTreeManager._idToDOMNode[this.id] = this;
 
         this._nodeType = payload.nodeType;
         this._nodeName = payload.nodeName;
         this._localName = payload.localName;
         this._nodeValue = payload.nodeValue;
+        this._pseudoType = payload.pseudoType;
+        this._shadowRootType = payload.shadowRootType;
         this._computedRole = payload.role;
+        this._contentSecurityPolicyHash = payload.contentSecurityPolicyHash;
 
         if (this._nodeType === Node.DOCUMENT_NODE)
             this.ownerDocument = this;
@@ -69,20 +72,38 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
 
         this._enabledPseudoClasses = [];
 
+        // FIXME: The logic around this._shadowRoots and this._children is very confusing.
         this._shadowRoots = [];
         if (payload.shadowRoots) {
             for (var i = 0; i < payload.shadowRoots.length; ++i) {
                 var root = payload.shadowRoots[i];
-                var node = new WebInspector.DOMNode(this._domAgent, this.ownerDocument, true, root);
+                var node = new WebInspector.DOMNode(this._domTreeManager, this.ownerDocument, true, root);
+                node.parentNode = this;
                 this._shadowRoots.push(node);
             }
         }
 
+        if (payload.templateContent) {
+            this._templateContent = new WebInspector.DOMNode(this._domTreeManager, this.ownerDocument, false, payload.templateContent);
+            this._templateContent.parentNode = this;
+        }
+
         if (payload.children)
             this._setChildrenPayload(payload.children);
+        else if (!this._children && this._shadowRoots.length)
+            this._children = this._shadowRoots.slice();
+
+        this._pseudoElements = new Map;
+        if (payload.pseudoElements) {
+            for (var i = 0; i < payload.pseudoElements.length; ++i) {
+                var node = new WebInspector.DOMNode(this._domTreeManager, this.ownerDocument, this._isInShadowTree, payload.pseudoElements[i]);
+                node.parentNode = this;
+                this._pseudoElements.set(node.pseudoType(), node);
+            }
+        }
 
         if (payload.contentDocument) {
-            this._contentDocument = new WebInspector.DOMNode(domAgent, null, false, payload.contentDocument);
+            this._contentDocument = new WebInspector.DOMNode(this._domTreeManager, null, false, payload.contentDocument);
             this._children = [this._contentDocument];
             this._renumber();
         }
@@ -112,6 +133,18 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
     }
 
     // Public
+
+    get frameIdentifier()
+    {
+        return this._frameIdentifier || this.ownerDocument.frameIdentifier;
+    }
+
+    get frame()
+    {
+        if (!this._frame)
+            this._frame = WebInspector.frameResourceManager.frameForIdentifier(this.frameIdentifier);
+        return this._frame;
+    }
 
     get children()
     {
@@ -201,6 +234,11 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
         return this._computedRole;
     }
 
+    contentSecurityPolicyHash()
+    {
+        return this._contentSecurityPolicyHash;
+    }
+
     hasAttributes()
     {
         return this._attributes.length > 0;
@@ -219,6 +257,11 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
     isInShadowTree()
     {
         return this._isInShadowTree;
+    }
+
+    isPseudoElement()
+    {
+        return this._pseudoType !== undefined;
     }
 
     nodeType()
@@ -244,6 +287,46 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
     localName()
     {
         return this._localName;
+    }
+
+    templateContent()
+    {
+        return this._templateContent || null;
+    }
+
+    pseudoType()
+    {
+        return this._pseudoType;
+    }
+
+    hasPseudoElements()
+    {
+        return this._pseudoElements.size > 0;
+    }
+
+    pseudoElements()
+    {
+        return this._pseudoElements;
+    }
+
+    beforePseudoElement()
+    {
+        return this._pseudoElements.get(WebInspector.DOMNode.PseudoElementType.Before) || null;
+    }
+
+    afterPseudoElement()
+    {
+        return this._pseudoElements.get(WebInspector.DOMNode.PseudoElementType.After) || null;
+    }
+
+    shadowRoots()
+    {
+        return this._shadowRoots;
+    }
+
+    shadowRootType()
+    {
+        return this._shadowRootType;
     }
 
     nodeValue()
@@ -364,6 +447,7 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
                     checked: accessibilityProperties.checked,
                     childNodeIds: accessibilityProperties.childNodeIds,
                     controlledNodeIds: accessibilityProperties.controlledNodeIds,
+                    current: accessibilityProperties.current,
                     disabled: accessibilityProperties.disabled,
                     exists: accessibilityProperties.exists,
                     expanded: accessibilityProperties.expanded,
@@ -407,6 +491,9 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
 
     appropriateSelectorFor(justSelector)
     {
+        if (this.isPseudoElement())
+            return this.parentNode.appropriateSelectorFor() + "::" + this._pseudoType;
+
         var lowerCaseName = this.localName() || this.nodeName().toLowerCase();
 
         var id = this.getAttribute("id");
@@ -460,7 +547,7 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
 
     _insertChild(prev, payload)
     {
-        var node = new WebInspector.DOMNode(this._domAgent, this.ownerDocument, this._isInShadowTree, payload);
+        var node = new WebInspector.DOMNode(this._domTreeManager, this.ownerDocument, this._isInShadowTree, payload);
         if (!prev) {
             if (!this._children) {
                 // First node
@@ -475,9 +562,15 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
 
     _removeChild(node)
     {
-        this._children.splice(this._children.indexOf(node), 1);
-        node.parentNode = null;
-        this._renumber();
+        // FIXME: Handle removal if this is a shadow root.
+        if (node.isPseudoElement()) {
+            this._pseudoElements.delete(node.pseudoType());
+            node.parentNode = null;
+        } else {
+            this._children.splice(this._children.indexOf(node), 1);
+            node.parentNode = null;
+            this._renumber();
+        }
     }
 
     _setChildrenPayload(payloads)
@@ -488,8 +581,7 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
 
         this._children = this._shadowRoots.slice();
         for (var i = 0; i < payloads.length; ++i) {
-            var payload = payloads[i];
-            var node = new WebInspector.DOMNode(this._domAgent, this.ownerDocument, this._isInShadowTree, payload);
+            var node = new WebInspector.DOMNode(this._domTreeManager, this.ownerDocument, this._isInShadowTree, payloads[i]);
             this._children.push(node);
         }
         this._renumber();
@@ -585,15 +677,21 @@ WebInspector.DOMNode = class DOMNode extends WebInspector.Object
                 callback.apply(null, arguments);
         };
     }
-
-    get frameIdentifier()
-    {
-        return this._frameIdentifier;
-    }
 };
 
 WebInspector.DOMNode.Event = {
     EnabledPseudoClassesChanged: "dom-node-enabled-pseudo-classes-did-change",
     AttributeModified: "dom-node-attribute-modified",
     AttributeRemoved: "dom-node-attribute-removed"
+};
+
+WebInspector.DOMNode.PseudoElementType = {
+    Before: "before",
+    After: "after",
+};
+
+WebInspector.DOMNode.ShadowRootType = {
+    UserAgent: "user-agent",
+    Closed: "closed",
+    Open: "open",
 };

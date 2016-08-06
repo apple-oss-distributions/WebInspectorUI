@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2013, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,109 +23,50 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.ContentViewContainer = function(element)
+WebInspector.ContentViewContainer = class ContentViewContainer extends WebInspector.View
 {
-    // FIXME: Convert this to a WebInspector.Object subclass, and call super().
-    // WebInspector.Object.call(this);
+    constructor()
+    {
+        super();
 
-    this._element = element || document.createElement("div");
-    this._element.classList.add("content-view-container");
+        this.element.classList.add("content-view-container");
 
-    this._backForwardList = [];
-    this._currentIndex = -1;
-};
-
-WebInspector.ContentViewContainer.Event = {
-    CurrentContentViewDidChange: "content-view-container-current-content-view-did-change"
-};
-
-WebInspector.ContentViewContainer.prototype = {
-    constructor: WebInspector.ContentViewContainer,
+        this._backForwardList = [];
+        this._currentIndex = -1;
+    }
 
     // Public
-
-    get element()
-    {
-        return this._element;
-    },
 
     get currentIndex()
     {
         return this._currentIndex;
-    },
+    }
 
     get backForwardList()
     {
         return this._backForwardList;
-    },
+    }
 
     get currentContentView()
     {
         if (this._currentIndex < 0 || this._currentIndex > this._backForwardList.length - 1)
             return null;
         return this._backForwardList[this._currentIndex].contentView;
-    },
+    }
 
     get currentBackForwardEntry()
     {
         if (this._currentIndex < 0 || this._currentIndex > this._backForwardList.length - 1)
             return null;
         return this._backForwardList[this._currentIndex];
-    },
+    }
 
-    updateLayout: function()
+    contentViewForRepresentedObject(representedObject, onlyExisting, extraArguments)
     {
-        var currentContentView = this.currentContentView;
-        if (currentContentView)
-            currentContentView.updateLayout();
-    },
+        return WebInspector.ContentView.contentViewForRepresentedObject(representedObject, onlyExisting, extraArguments);
+    }
 
-    contentViewForRepresentedObject: function(representedObject, onlyExisting, extraArguments)
-    {
-        console.assert(representedObject);
-        if (!representedObject)
-            return null;
-
-        // Iterate over all the known content views for the representedObject (if any) and find one that doesn't
-        // have a parent container or has this container as its parent.
-        var contentView = null;
-        for (var i = 0; representedObject.__contentViews && i < representedObject.__contentViews.length; ++i) {
-            var currentContentView = representedObject.__contentViews[i];
-            if (!currentContentView._parentContainer || currentContentView._parentContainer === this) {
-                contentView = currentContentView;
-                break;
-            }
-        }
-
-        console.assert(!contentView || contentView instanceof WebInspector.ContentView);
-        if (contentView instanceof WebInspector.ContentView)
-            return contentView;
-
-        // Return early to avoid creating a new content view when onlyExisting is true.
-        if (onlyExisting)
-            return null;
-
-        // No existing content view found, make a new one.
-        contentView = new WebInspector.ContentView(representedObject, extraArguments);
-
-        console.assert(contentView, "Unknown representedObject", representedObject);
-        if (!contentView)
-            return null;
-
-        // The representedObject can change in the constructor for ContentView. Remember the
-        // contentViews on the real representedObject and not the one originally supplied.
-        // The main case for this is a Frame being passed in and the main Resource being used.
-        representedObject = contentView.representedObject;
-
-        // Remember this content view for future calls.
-        if (!representedObject.__contentViews)
-            representedObject.__contentViews = [];
-        representedObject.__contentViews.push(contentView);
-
-        return contentView;
-    },
-
-    showContentViewForRepresentedObject: function(representedObject, extraArguments)
+    showContentViewForRepresentedObject(representedObject, extraArguments)
     {
         var contentView = this.contentViewForRepresentedObject(representedObject, false, extraArguments);
         if (!contentView)
@@ -134,22 +75,36 @@ WebInspector.ContentViewContainer.prototype = {
         this.showContentView(contentView);
 
         return contentView;
-    },
+    }
 
-    showContentView: function(contentView, cookie)
+    showContentView(contentView, cookie)
     {
         console.assert(contentView instanceof WebInspector.ContentView);
         if (!(contentView instanceof WebInspector.ContentView))
             return null;
 
-        // Don't allow showing a content view that is already associated with another container.
-        // Showing a content view that is already associated with this container is allowed.
-        console.assert(!contentView.parentContainer || contentView.parentContainer === this);
-        if (contentView.parentContainer && contentView.parentContainer !== this)
-            return null;
+        // ContentViews can be shared between containers. If this content view is
+        // not owned by us, it may need to be transferred to this container.
+        if (contentView.parentContainer !== this)
+            this._takeOwnershipOfContentView(contentView);
 
-        var currentEntry = this.currentBackForwardEntry;
-        var provisionalEntry = new WebInspector.BackForwardEntry(contentView, cookie);
+        let currentEntry = this.currentBackForwardEntry;
+
+        // Try to find the last entry with the same content view so we can copy it
+        // to preserve the last scroll positions. The supplied cookie (if any) could
+        // still change the scroll position afterwards, but in most cases the cookie
+        // is undefined, so we want to show with a state last used.
+        let provisionalEntry = null;
+        for (let i = this._backForwardList.length - 1; i >= 0; --i) {
+            if (this._backForwardList[i].contentView === contentView) {
+                provisionalEntry = this._backForwardList[i].makeCopy(cookie);
+                break;
+            }
+        }
+
+        if (!provisionalEntry)
+            provisionalEntry = new WebInspector.BackForwardEntry(contentView, cookie);
+
         // Don't do anything if we would have added an identical back/forward list entry.
         if (currentEntry && currentEntry.contentView === contentView && Object.shallowEqual(provisionalEntry.cookie, currentEntry.cookie)) {
             const shouldCallShown = false;
@@ -161,23 +116,20 @@ WebInspector.ContentViewContainer.prototype = {
         // at the end of the list. Finally, the current index will be updated to point to the end of the back/forward list.
 
         // Increment the current index to where we will insert the content view.
-        var newIndex = this._currentIndex + 1;
+        let newIndex = this._currentIndex + 1;
 
         // Insert the content view at the new index. This will remove any content views greater than or equal to the index.
-        var removedEntries = this._backForwardList.splice(newIndex, this._backForwardList.length - newIndex, provisionalEntry);
+        let removedEntries = this._backForwardList.splice(newIndex, this._backForwardList.length - newIndex, provisionalEntry);
 
         console.assert(newIndex === this._backForwardList.length - 1);
         console.assert(this._backForwardList[newIndex] === provisionalEntry);
 
         // Disassociate with the removed content views.
-        for (var i = 0; i < removedEntries.length; ++i) {
+        for (let i = 0; i < removedEntries.length; ++i) {
             // Skip disassociation if this content view is still in the back/forward list.
-            var shouldDissociateContentView = !this._backForwardList.some(function(existingEntry) {
-                return existingEntry.contentView === removedEntries[i].contentView;
-            });
-
+            let shouldDissociateContentView = !this._backForwardList.some((existingEntry) => existingEntry.contentView === removedEntries[i].contentView);
             if (shouldDissociateContentView)
-                this._disassociateFromContentView(removedEntries[i].contentView);
+                this._disassociateFromContentView(removedEntries[i].contentView, removedEntries[i].tombstone);
         }
 
         // Associate with the new content view.
@@ -186,9 +138,9 @@ WebInspector.ContentViewContainer.prototype = {
         this.showBackForwardEntryForIndex(newIndex);
 
         return contentView;
-    },
+    }
 
-    showBackForwardEntryForIndex: function(index)
+    showBackForwardEntryForIndex(index)
     {
         console.assert(index >= 0 && index <= this._backForwardList.length - 1);
         if (index < 0 || index > this._backForwardList.length - 1)
@@ -212,9 +164,9 @@ WebInspector.ContentViewContainer.prototype = {
             this._showEntry(currentEntry, false);
 
         this.dispatchEventToListeners(WebInspector.ContentViewContainer.Event.CurrentContentViewDidChange);
-    },
+    }
 
-    replaceContentView: function(oldContentView, newContentView)
+    replaceContentView(oldContentView, newContentView)
     {
         console.assert(oldContentView instanceof WebInspector.ContentView);
         if (!(oldContentView instanceof WebInspector.ContentView))
@@ -237,15 +189,18 @@ WebInspector.ContentViewContainer.prototype = {
             this._hideEntry(this.currentBackForwardEntry);
 
         // Disassociate with the old content view.
-        this._disassociateFromContentView(oldContentView);
+        this._disassociateFromContentView(oldContentView, false);
 
         // Associate with the new content view.
         newContentView._parentContainer = this;
 
         // Replace all occurrences of oldContentView with newContentView in the back/forward list.
         for (var i = 0; i < this._backForwardList.length; ++i) {
-            if (this._backForwardList[i].contentView === oldContentView)
-                this._backForwardList[i].contentView = newContentView;
+            if (this._backForwardList[i].contentView === oldContentView) {
+                console.assert(!this._backForwardList[i].tombstone);
+                let currentCookie = this._backForwardList[i].cookie;
+                this._backForwardList[i] = new WebInspector.BackForwardEntry(newContentView, currentCookie);
+            }
         }
 
         // Re-show the current entry, because its content view instance was replaced.
@@ -253,9 +208,9 @@ WebInspector.ContentViewContainer.prototype = {
             this._showEntry(this.currentBackForwardEntry, true);
             this.dispatchEventToListeners(WebInspector.ContentViewContainer.Event.CurrentContentViewDidChange);
         }
-    },
+    }
 
-    closeAllContentViewsOfPrototype: function(constructor)
+    closeAllContentViewsOfPrototype(constructor)
     {
         if (!this._backForwardList.length) {
             console.assert(this._currentIndex === -1);
@@ -295,7 +250,7 @@ WebInspector.ContentViewContainer.prototype = {
                 --this._currentIndex;
             }
 
-            this._disassociateFromContentView(entry.contentView);
+            this._disassociateFromContentView(entry.contentView, entry.tombstone);
 
             // Remove the item from the back/forward list.
             this._backForwardList.splice(i, 1);
@@ -309,9 +264,9 @@ WebInspector.ContentViewContainer.prototype = {
             this._showEntry(currentEntry, true);
             this.dispatchEventToListeners(WebInspector.ContentViewContainer.Event.CurrentContentViewDidChange);
         }
-    },
+    }
 
-    closeContentView: function(contentViewToClose)
+    closeContentView(contentViewToClose)
     {
         if (!this._backForwardList.length) {
             console.assert(this._currentIndex === -1);
@@ -351,7 +306,7 @@ WebInspector.ContentViewContainer.prototype = {
                 --this._currentIndex;
             }
 
-            this._disassociateFromContentView(entry.contentView);
+            this._disassociateFromContentView(entry.contentView, entry.tombstone);
 
             // Remove the item from the back/forward list.
             this._backForwardList.splice(i, 1);
@@ -365,9 +320,9 @@ WebInspector.ContentViewContainer.prototype = {
             this._showEntry(currentEntry, true);
             this.dispatchEventToListeners(WebInspector.ContentViewContainer.Event.CurrentContentViewDidChange);
         }
-    },
+    }
 
-    closeAllContentViews: function()
+    closeAllContentViews()
     {
         if (!this._backForwardList.length) {
             console.assert(this._currentIndex === -1);
@@ -381,73 +336,127 @@ WebInspector.ContentViewContainer.prototype = {
             var entry = this._backForwardList[i];
             if (entry.contentView === visibleContentView)
                 this._hideEntry(entry);
-            this._disassociateFromContentView(entry.contentView);
+            this._disassociateFromContentView(entry.contentView, entry.tombstone);
         }
 
         this._backForwardList = [];
         this._currentIndex = -1;
 
         this.dispatchEventToListeners(WebInspector.ContentViewContainer.Event.CurrentContentViewDidChange);
-    },
+    }
 
-    canGoBack: function()
+    canGoBack()
     {
         return this._currentIndex > 0;
-    },
+    }
 
-    canGoForward: function()
+    canGoForward()
     {
         return this._currentIndex < this._backForwardList.length - 1;
-    },
+    }
 
-    goBack: function()
+    goBack()
     {
         if (!this.canGoBack())
             return;
         this.showBackForwardEntryForIndex(this._currentIndex - 1);
-    },
+    }
 
-    goForward: function()
+    goForward()
     {
         if (!this.canGoForward())
             return;
         this.showBackForwardEntryForIndex(this._currentIndex + 1);
-    },
+    }
 
-    shown: function()
+    shown()
     {
         var currentEntry = this.currentBackForwardEntry;
         if (!currentEntry)
             return;
 
         this._showEntry(currentEntry, true);
-    },
+    }
 
-    hidden: function()
+    hidden()
     {
         var currentEntry = this.currentBackForwardEntry;
         if (!currentEntry)
             return;
 
         this._hideEntry(currentEntry);
-    },
+    }
 
     // Private
 
-    _addContentViewElement: function(contentView)
+    _takeOwnershipOfContentView(contentView)
     {
-        if (contentView.element.parentNode !== this._element)
-            this._element.appendChild(contentView.element);
-    },
+        console.assert(contentView.parentContainer !== this, "We already have ownership of the ContentView");
+        if (contentView.parentContainer === this)
+            return;
 
-    _removeContentViewElement: function(contentView)
-    {
-        if (contentView.element.parentNode)
-            contentView.element.parentNode.removeChild(contentView.element);
-    },
+        if (contentView.parentContainer)
+            contentView.parentContainer._placeTombstonesForContentView(contentView);
 
-    _disassociateFromContentView: function(contentView)
+        contentView._parentContainer = this;
+
+        this._clearTombstonesForContentView(contentView);
+    }
+
+    _placeTombstonesForContentView(contentView)
     {
+        console.assert(contentView.parentContainer === this);
+
+        // Ensure another ContentViewContainer doesn't close this ContentView while we still have it.
+        let tombstoneContentViewContainers = this._tombstoneContentViewContainersForContentView(contentView);
+        console.assert(!tombstoneContentViewContainers.includes(this));
+
+        let visibleContentView = this.currentContentView;
+
+        for (let entry of this._backForwardList) {
+            if (entry.contentView !== contentView)
+                continue;
+
+            if (entry.contentView === visibleContentView) {
+                this._hideEntry(entry);
+                visibleContentView = null;
+            }
+
+            console.assert(!entry.tombstone);
+            entry.tombstone = true;
+
+            tombstoneContentViewContainers.push(this);
+        }
+    }
+
+    _clearTombstonesForContentView(contentView)
+    {
+        console.assert(contentView.parentContainer === this);
+
+        let tombstoneContentViewContainers = this._tombstoneContentViewContainersForContentView(contentView);
+        const onlyFirst = false;
+        tombstoneContentViewContainers.remove(this, onlyFirst);
+
+        for (let entry of this._backForwardList) {
+            if (entry.contentView !== contentView)
+                continue;
+
+            console.assert(entry.tombstone);
+            entry.tombstone = false;
+        }
+    }
+
+    _disassociateFromContentView(contentView, isTombstone)
+    {
+        // Just remove one of our tombstone back references.
+        // There may be other back/forward entries that need a reference.
+        if (isTombstone) {
+            let tombstoneContentViewContainers = this._tombstoneContentViewContainersForContentView(contentView);
+            const onlyFirst = true;
+            tombstoneContentViewContainers.remove(this, onlyFirst);
+            return;
+        }
+
         console.assert(!contentView.visible);
 
         if (!contentView._parentContainer)
@@ -455,28 +464,64 @@ WebInspector.ContentViewContainer.prototype = {
 
         contentView._parentContainer = null;
 
-        var representedObject = contentView.representedObject;
-        if (representedObject && representedObject.__contentViews)
-            representedObject.__contentViews.remove(contentView);
+        // If another ContentViewContainer has tombstones for this, just transfer
+        // ownership to that ContentViewContainer and avoid closing the ContentView.
+        // We don't care who we transfer this to, so just use the first.
+        let tombstoneContentViewContainers = this._tombstoneContentViewContainersForContentView(contentView);
+        if (tombstoneContentViewContainers && tombstoneContentViewContainers.length) {
+            tombstoneContentViewContainers[0]._takeOwnershipOfContentView(contentView);
+            return;
+        }
 
         contentView.closed();
-    },
 
-    _showEntry: function(entry, shouldCallShown)
+        if (contentView.representedObject)
+            WebInspector.ContentView.closedContentViewForRepresentedObject(contentView.representedObject);
+    }
+
+    _showEntry(entry, shouldCallShown)
     {
         console.assert(entry instanceof WebInspector.BackForwardEntry);
 
-        this._addContentViewElement(entry.contentView);
+        // We may be showing a tombstone from a BackForward list or when re-showing a container
+        // that had previously had the content view transferred away from it.
+        // Take over the ContentView.
+        if (entry.tombstone) {
+            this._takeOwnershipOfContentView(entry.contentView);
+            console.assert(!entry.tombstone);
+        }
+
+        if (!this.subviews.includes(entry.contentView))
+            this.addSubview(entry.contentView)
+
         entry.prepareToShow(shouldCallShown);
-    },
+    }
 
-    _hideEntry: function(entry)
+    _hideEntry(entry)
     {
         console.assert(entry instanceof WebInspector.BackForwardEntry);
+
+        // If this was a tombstone, the content view should already have been
+        // hidden when we placed the tombstone.
+        if (entry.tombstone)
+            return;
 
         entry.prepareToHide();
-        this._removeContentViewElement(entry.contentView);
+        if (this.subviews.includes(entry.contentView))
+            this.removeSubview(entry.contentView)
+    }
+
+    _tombstoneContentViewContainersForContentView(contentView)
+    {
+        let tombstoneContentViewContainers = contentView[WebInspector.ContentViewContainer.TombstoneContentViewContainersSymbol];
+        if (!tombstoneContentViewContainers)
+            tombstoneContentViewContainers = contentView[WebInspector.ContentViewContainer.TombstoneContentViewContainersSymbol] = [];
+        return tombstoneContentViewContainers;
     }
 };
 
-WebInspector.ContentViewContainer.prototype.__proto__ = WebInspector.Object.prototype;
+WebInspector.ContentViewContainer.Event = {
+    CurrentContentViewDidChange: "content-view-container-current-content-view-did-change"
+};
+
+WebInspector.ContentViewContainer.TombstoneContentViewContainersSymbol = Symbol("content-view-container-tombstone-content-view-containers");

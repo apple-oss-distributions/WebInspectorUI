@@ -31,7 +31,7 @@ WebInspector.TypeDescription = class TypeDescription extends WebInspector.Object
 
         console.assert(!leastCommonAncestor || typeof leastCommonAncestor === "string");
         console.assert(!typeSet || typeSet instanceof WebInspector.TypeSet);
-        console.assert(!structures || structures.every(function(x) { return x instanceof WebInspector.StructureDescription; }));
+        console.assert(!structures || structures.every((x) => x instanceof WebInspector.StructureDescription));
 
         this._leastCommonAncestor = leastCommonAncestor || null;
         this._typeSet = typeSet || null;
@@ -51,7 +51,7 @@ WebInspector.TypeDescription = class TypeDescription extends WebInspector.Object
 
         var structures = undefined;
         if (payload.structures)
-            structures = payload.structures.map(function(x) { return WebInspector.StructureDescription.fromPayload(x); });
+            structures = payload.structures.map(WebInspector.StructureDescription.fromPayload);
 
         return new WebInspector.TypeDescription(payload.leastCommonAncestor, typeSet, structures, payload.isValid, payload.isTruncated);
     }

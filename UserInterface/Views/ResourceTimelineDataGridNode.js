@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2013, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,46 +23,39 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.ResourceTimelineDataGridNode = function(resourceTimelineRecord, graphOnly, graphDataSource)
+WebInspector.ResourceTimelineDataGridNode = class ResourceTimelineDataGridNode extends WebInspector.TimelineDataGridNode
 {
-    WebInspector.TimelineDataGridNode.call(this, graphOnly, graphDataSource);
+    constructor(resourceTimelineRecord, includesGraph, graphDataSource)
+    {
+        super(includesGraph, graphDataSource);
 
-    this._resource = resourceTimelineRecord.resource;
-    this._record = resourceTimelineRecord;
+        this._resource = resourceTimelineRecord.resource;
+        this._record = resourceTimelineRecord;
 
-    this._record.addEventListener(WebInspector.TimelineRecord.Event.Updated, graphOnly ? this._timelineRecordUpdated : this._needsRefresh, this);
-
-    if (!graphOnly) {
-        this._resource.addEventListener(WebInspector.Resource.Event.URLDidChange, this._needsRefresh, this);
-        this._resource.addEventListener(WebInspector.Resource.Event.TypeDidChange, this._needsRefresh, this);
         this._resource.addEventListener(WebInspector.Resource.Event.LoadingDidFinish, this._needsRefresh, this);
         this._resource.addEventListener(WebInspector.Resource.Event.LoadingDidFail, this._needsRefresh, this);
-        this._resource.addEventListener(WebInspector.Resource.Event.SizeDidChange, this._needsRefresh, this);
-        this._resource.addEventListener(WebInspector.Resource.Event.TransferSizeDidChange, this._needsRefresh, this);
+        this._resource.addEventListener(WebInspector.Resource.Event.URLDidChange, this._needsRefresh, this);
+
+        if (includesGraph)
+            this._record.addEventListener(WebInspector.TimelineRecord.Event.Updated, this._timelineRecordUpdated, this);
+        else {
+            this._resource.addEventListener(WebInspector.Resource.Event.TypeDidChange, this._needsRefresh, this);
+            this._resource.addEventListener(WebInspector.Resource.Event.SizeDidChange, this._needsRefresh, this);
+            this._resource.addEventListener(WebInspector.Resource.Event.TransferSizeDidChange, this._needsRefresh, this);
+        }
     }
-};
-
-// FIXME: Move to a WebInspector.Object subclass and we can remove this.
-WebInspector.Object.deprecatedAddConstructorFunctions(WebInspector.ResourceTimelineDataGridNode);
-
-WebInspector.ResourceTimelineDataGridNode.IconStyleClassName = "icon";
-WebInspector.ResourceTimelineDataGridNode.ErrorStyleClassName = "error";
-
-WebInspector.ResourceTimelineDataGridNode.prototype = {
-    constructor: WebInspector.ResourceTimelineDataGridNode,
-    __proto__: WebInspector.TimelineDataGridNode.prototype,
 
     // Public
 
     get records()
     {
         return [this._record];
-    },
+    }
 
     get resource()
     {
         return this._resource;
-    },
+    }
 
     get data()
     {
@@ -72,7 +65,7 @@ WebInspector.ResourceTimelineDataGridNode.prototype = {
         var resource = this._resource;
         var data = {};
 
-        if (!this._graphOnly) {
+        if (!this._includesGraph) {
             var zeroTime = this.graphDataSource ? this.graphDataSource.zeroTime : 0;
 
             data.domain = WebInspector.displayNameForHost(resource.urlComponents.host);
@@ -92,60 +85,116 @@ WebInspector.ResourceTimelineDataGridNode.prototype = {
 
         this._cachedData = data;
         return data;
-    },
+    }
 
-    createCellContent: function(columnIdentifier, cell)
+    createCellContent(columnIdentifier, cell)
     {
         var resource = this._resource;
 
         if (resource.failed || resource.canceled || resource.statusCode >= 400)
-            cell.classList.add(WebInspector.ResourceTimelineDataGridNode.ErrorStyleClassName);
+            cell.classList.add("error");
 
-        const emptyValuePlaceholderString = "\u2014";
         var value = this.data[columnIdentifier];
 
         switch (columnIdentifier) {
+        case "name":
+            cell.classList.add(...this.iconClassNames());
+            cell.title = resource.displayURL;
+            this._updateStatus(cell);
+            return this._createNameCellDocumentFragment();
+
         case "type":
             return WebInspector.Resource.displayNameForType(value);
 
         case "statusCode":
             cell.title = resource.statusText || "";
-            return value || emptyValuePlaceholderString;
+            return value || emDash;
 
         case "cached":
             return value ? WebInspector.UIString("Yes") : WebInspector.UIString("No");
 
         case "domain":
-            return value || emptyValuePlaceholderString;
+            return value || emDash;
 
         case "size":
         case "transferSize":
-            return isNaN(value) ? emptyValuePlaceholderString : Number.bytesToString(value, true);
+            return isNaN(value) ? emDash : Number.bytesToString(value, true);
 
         case "requestSent":
         case "latency":
         case "duration":
-            return isNaN(value) ? emptyValuePlaceholderString : Number.secondsToString(value, true);
+            return isNaN(value) ? emDash : Number.secondsToString(value, true);
         }
 
-        return WebInspector.TimelineDataGridNode.prototype.createCellContent.call(this, columnIdentifier, cell);
-    },
+        return super.createCellContent(columnIdentifier, cell);
+    }
 
-    refresh: function()
+    refresh()
     {
         if (this._scheduledRefreshIdentifier) {
             cancelAnimationFrame(this._scheduledRefreshIdentifier);
-            delete this._scheduledRefreshIdentifier;
+            this._scheduledRefreshIdentifier = undefined;
         }
 
-        delete this._cachedData;
+        this._cachedData = null;
 
-        WebInspector.TimelineDataGridNode.prototype.refresh.call(this);
-    },
+        super.refresh();
+    }
+
+    iconClassNames()
+    {
+        return [WebInspector.ResourceTreeElement.ResourceIconStyleClassName, this.resource.type];
+    }
+
+    appendContextMenuItems(contextMenu)
+    {
+        if (this._resource.urlComponents.scheme !== "data")
+            contextMenu.appendItem(WebInspector.UIString("Copy as cURL"), () => { this._resource.generateCURLCommand(); });
+    }
+
+    // Protected
+
+    filterableDataForColumn(columnIdentifier)
+    {
+        if (columnIdentifier === "name")
+            return this._resource.url;
+        return super.filterableDataForColumn(columnIdentifier);
+    }
 
     // Private
 
-    _needsRefresh: function()
+    _createNameCellDocumentFragment()
+    {
+        let fragment = document.createDocumentFragment();
+        let mainTitle = this.displayName();
+        fragment.append(mainTitle);
+
+        // Show the host as the subtitle if it is different from the main resource or if this is the main frame's main resource.
+        let frame = this._resource.parentFrame;
+        let isMainResource = this._resource.isMainResource();
+        let parentResourceHost;
+        if (frame && isMainResource) {
+            // When the resource is a main resource, get the host from the current frame's parent frame instead of the current frame.
+            parentResourceHost = frame.parentFrame ? frame.parentFrame.mainResource.urlComponents.host : null;
+        } else if (frame) {
+            // When the resource is a normal sub-resource, get the host from the current frame's main resource.
+            parentResourceHost = frame.mainResource.urlComponents.host;
+        }
+
+        if (parentResourceHost !== this._resource.urlComponents.host || frame.isMainFrame() && isMainResource) {
+            let subtitle = WebInspector.displayNameForHost(this._resource.urlComponents.host);
+            if (mainTitle !== subtitle) {
+                let subtitleElement = document.createElement("span");
+                subtitleElement.classList.add("subtitle");
+                subtitleElement.textContent = subtitle;
+                fragment.append(subtitleElement);
+            }
+        }
+
+        return fragment;
+    }
+
+    _needsRefresh()
     {
         if (this.dataGrid instanceof WebInspector.TimelineDataGrid) {
             this.dataGrid.dataGridNodeNeedsRefresh(this);
@@ -156,11 +205,40 @@ WebInspector.ResourceTimelineDataGridNode.prototype = {
             return;
 
         this._scheduledRefreshIdentifier = requestAnimationFrame(this.refresh.bind(this));
-    },
+    }
 
-    _timelineRecordUpdated: function(event)
+    _timelineRecordUpdated(event)
     {
         if (this.isRecordVisible(this._record))
             this.needsGraphRefresh();
+    }
+
+    _dataGridNodeGoToArrowClicked()
+    {
+        WebInspector.showSourceCode(this._resource);
+    }
+
+    _updateStatus(cell)
+    {
+        if (this._resource.failed)
+            cell.classList.add("error");
+        else {
+            cell.classList.remove("error");
+
+            if (this._resource.finished)
+                this.createGoToArrowButton(cell, this._dataGridNodeGoToArrowClicked.bind(this));
+        }
+
+        if (this._spinner)
+            this._spinner.element.remove();
+
+        if (this._resource.finished || this._resource.failed)
+            return;
+
+        if (!this._spinner)
+            this._spinner = new WebInspector.IndeterminateProgressSpinner;
+
+        let contentElement = cell.firstChild;
+        contentElement.appendChild(this._spinner.element);
     }
 };

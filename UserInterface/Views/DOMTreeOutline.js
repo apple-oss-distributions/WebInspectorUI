@@ -32,20 +32,18 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
 {
     constructor(omitRootDOMNode, selectEnabled, excludeRevealElementContextMenu)
     {
-        var element = document.createElement("ol");
+        super();
 
-        super(element);
+        this.element.addEventListener("mousedown", this._onmousedown.bind(this), false);
+        this.element.addEventListener("mousemove", this._onmousemove.bind(this), false);
+        this.element.addEventListener("mouseout", this._onmouseout.bind(this), false);
+        this.element.addEventListener("dragstart", this._ondragstart.bind(this), false);
+        this.element.addEventListener("dragover", this._ondragover.bind(this), false);
+        this.element.addEventListener("dragleave", this._ondragleave.bind(this), false);
+        this.element.addEventListener("drop", this._ondrop.bind(this), false);
+        this.element.addEventListener("dragend", this._ondragend.bind(this), false);
 
-        element.addEventListener("mousedown", this._onmousedown.bind(this), false);
-        element.addEventListener("mousemove", this._onmousemove.bind(this), false);
-        element.addEventListener("mouseout", this._onmouseout.bind(this), false);
-        element.addEventListener("dragstart", this._ondragstart.bind(this), false);
-        element.addEventListener("dragover", this._ondragover.bind(this), false);
-        element.addEventListener("dragleave", this._ondragleave.bind(this), false);
-        element.addEventListener("drop", this._ondrop.bind(this), false);
-        element.addEventListener("dragend", this._ondragend.bind(this), false);
-
-        element.classList.add("dom-tree-outline", WebInspector.SyntaxHighlightedStyleClassName);
+        this.element.classList.add("dom", WebInspector.SyntaxHighlightedStyleClassName);
 
         this._includeRootDOMNode = !omitRootDOMNode;
         this._selectEnabled = selectEnabled;
@@ -191,10 +189,12 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
 
     updateSelection()
     {
-        if (!this.selectedTreeElement)
-            return;
-        var element = this.treeOutline.selectedTreeElement;
-        element.updateSelection();
+        // This will miss updating selection areas used for the hovered tree element and
+        // and those used to show forced pseudo class indicators, but this should be okay.
+        // The hovered element will update when user moves the mouse, and indicators don't need the
+        // selection area height to be accurate since they use ::before to place the indicator.
+        if (this.selectedTreeElement)
+            this.selectedTreeElement.updateSelectionArea();
     }
 
     _selectedNodeChanged()
@@ -204,17 +204,9 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
 
     findTreeElement(node)
     {
-        function isAncestorNode(ancestor, node)
-        {
-            return ancestor.isAncestor(node);
-        }
-
-        function parentNode(node)
-        {
-            return node.parentNode;
-        }
-
-        var treeElement = super.findTreeElement(node, isAncestorNode, parentNode);
+        let isAncestorNode = (ancestor, node) => ancestor.isAncestor(node);
+        let parentNode = (node) => node.parentNode;
+        let treeElement = super.findTreeElement(node, isAncestorNode, parentNode);
         if (!treeElement && node.nodeType() === Node.TEXT_NODE) {
             // The text node might have been inlined if it was short, so try to find the parent element.
             treeElement = super.findTreeElement(node.parentNode, isAncestorNode, parentNode);
@@ -228,14 +220,15 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
         var treeElement = this.findTreeElement(node);
         if (treeElement)
             return treeElement;
+
         if (!node.parentNode)
             return null;
 
         treeElement = this.createTreeElementFor(node.parentNode);
-        if (treeElement && treeElement.showChild(node.index))
-            return treeElement.children[node.index];
+        if (!treeElement)
+            return null;
 
-        return null;
+        return treeElement.showChildNode(node);
     }
 
     set suppressRevealAndSelect(x)
@@ -265,7 +258,7 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
         } else if (commentNode && treeElement._populateNodeContextMenu) {
             if (populated)
                 contextMenu.appendSeparator();
-            treeElement._populateNodeContextMenu(contextMenu, textNode);
+            treeElement._populateNodeContextMenu(contextMenu);
             populated = true;
         }
 
@@ -282,6 +275,13 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
     {
         if (!node || this._suppressRevealAndSelect)
             return;
+
+        if (!WebInspector.showShadowDOMSetting.value) {
+            while (node && node.isInShadowTree())
+                node = node.parentNode;
+            if (!node)
+                return;
+        }
 
         var treeElement = this.createTreeElementFor(node);
         if (!treeElement)
@@ -335,7 +335,7 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
 
         if (this._previousHoveredElement) {
             this._previousHoveredElement.hovered = false;
-            delete this._previousHoveredElement;
+            this._previousHoveredElement = null;
         }
 
         if (element) {
@@ -358,7 +358,7 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
 
         if (this._previousHoveredElement) {
             this._previousHoveredElement.hovered = false;
-            delete this._previousHoveredElement;
+            this._previousHoveredElement = null;
         }
 
         WebInspector.domTreeManager.hideDOMNodeHighlight();
@@ -401,9 +401,10 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
             node = node.parentNode;
         }
 
-        treeElement.updateSelection();
+        this.dragOverTreeElement = treeElement;
         treeElement.listItemElement.classList.add("elements-drag-over");
-        this._dragOverTreeElement = treeElement;
+        treeElement.updateSelectionArea();
+
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
         return false;
@@ -475,22 +476,23 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
 
     _clearDragOverTreeElementMarker()
     {
-        if (this._dragOverTreeElement) {
-            this._dragOverTreeElement.updateSelection();
-            this._dragOverTreeElement.listItemElement.classList.remove("elements-drag-over");
-            delete this._dragOverTreeElement;
+        if (this.dragOverTreeElement) {
+            let element = this.dragOverTreeElement;
+            this.dragOverTreeElement = null;
+
+            element.listItemElement.classList.remove("elements-drag-over");
+            element.updateSelectionArea();
         }
     }
 
     _contextMenuEventFired(event)
     {
-        var treeElement = this._treeElementFromEvent(event);
+        let treeElement = this._treeElementFromEvent(event);
         if (!treeElement)
             return;
 
-        var contextMenu = new WebInspector.ContextMenu(event);
+        let contextMenu = WebInspector.ContextMenu.createFromEvent(event);
         this.populateContextMenu(contextMenu, event, treeElement);
-        contextMenu.show();
     }
 
     _updateModifiedNodes()
@@ -508,10 +510,10 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
 
         function logElement()
         {
-            WebInspector.RemoteObject.resolveNode(domNode, "console", function(remoteObject) {
+            WebInspector.RemoteObject.resolveNode(domNode, WebInspector.RuntimeManager.ConsoleObjectGroup, function(remoteObject) {
                 if (!remoteObject)
                     return;
-                var text = WebInspector.UIString("Selected Element");
+                let text = WebInspector.UIString("Selected Element");
                 WebInspector.consoleLogViewController.appendImmediateExecutionWithResult(text, remoteObject, true);
             });
         }
@@ -548,12 +550,19 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
 
         event.preventDefault();
 
-        var selectedNode = this.selectedTreeElement.representedObject;
-        console.assert(selectedNode);
-        if (!selectedNode)
+        var effectiveNode = this.selectedTreeElement.representedObject;
+        console.assert(effectiveNode);
+        if (!effectiveNode)
             return;
 
-        if (selectedNode.nodeType() !== Node.ELEMENT_NODE)
+        if (effectiveNode.isPseudoElement()) {
+            effectiveNode = effectiveNode.parentNode;
+            console.assert(effectiveNode);
+            if (!effectiveNode)
+                return;
+        }            
+
+        if (effectiveNode.nodeType() !== Node.ELEMENT_NODE)
             return;
 
         function resolvedNode(object)
@@ -579,7 +588,7 @@ WebInspector.DOMTreeOutline = class DOMTreeOutline extends WebInspector.TreeOutl
             object.release();
         }
 
-        WebInspector.RemoteObject.resolveNode(selectedNode, "", resolvedNode);
+        WebInspector.RemoteObject.resolveNode(effectiveNode, "", resolvedNode);
     }
 };
 

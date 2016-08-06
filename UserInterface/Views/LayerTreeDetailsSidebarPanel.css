@@ -24,7 +24,7 @@
  */
 
 .sidebar > .panel.details.layer-tree > .content {
-    bottom: 28px;
+    bottom: var(--console-prompt-min-height);
 }
 
 .panel.details.layer-tree .data-grid {
@@ -46,19 +46,20 @@
 }
 
 .panel.details.layer-tree .name-column :matches(.pseudo-element, .reflection) {
-    color: rgb(128, 128, 128);
+    color: hsl(0, 0%, 50%);
 }
 
 .panel.details.layer-tree tr.selected .name-column :matches(.pseudo-element, .reflection) {
-    color: rgba(255, 255, 255, 0.75);
+    color: hsla(0, 0%, 100%, 0.75);
 }
 
 .panel.details.layer-tree .bottom-bar {
     position: absolute;
     display: flex;
     bottom: 0;
+    height: var(--console-prompt-min-height);
     width: 100%;
-    border-top: 1px solid rgb(179, 179, 179);
+    border-top: 1px solid var(--border-color);
     background-color: white;
 }
 

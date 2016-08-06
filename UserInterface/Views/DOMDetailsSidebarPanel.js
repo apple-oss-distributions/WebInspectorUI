@@ -25,9 +25,9 @@
 
 WebInspector.DOMDetailsSidebarPanel = class DOMDetailsSidebarPanel extends WebInspector.DetailsSidebarPanel
 {
-    constructor(identifier, displayName, singularDisplayName, element)
+    constructor(identifier, displayName, singularDisplayName, element, dontCreateNavigationItem)
     {
-        super(identifier, displayName, singularDisplayName, element);
+        super(identifier, displayName, singularDisplayName, element, dontCreateNavigationItem);
 
         this.element.addEventListener("click", this._mouseWasClicked.bind(this), true);
 
@@ -78,7 +78,7 @@ WebInspector.DOMDetailsSidebarPanel = class DOMDetailsSidebarPanel extends WebIn
         if (this._domNode)
             this.addEventListeners();
 
-        this.needsRefresh();
+        this.needsLayout();
     }
 
     supportsDOMNode(nodeToInspect)

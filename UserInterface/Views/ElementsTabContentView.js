@@ -23,39 +23,51 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.ElementsTabContentView = function(identifier)
+WebInspector.ElementsTabContentView = class ElementsTabContentView extends WebInspector.ContentBrowserTabContentView
 {
-    var tabBarItem = new WebInspector.TabBarItem("Images/Elements.svg", WebInspector.UIString("Elements"));
-    var detailsSidebarPanels = [WebInspector.domNodeDetailsSidebarPanel, WebInspector.cssStyleDetailsSidebarPanel];
+    constructor(identifier)
+    {
+        let {image, title} = WebInspector.ElementsTabContentView.tabInfo();
+        let tabBarItem = new WebInspector.TabBarItem(image, title);
+        let detailsSidebarPanels = [WebInspector.domNodeDetailsSidebarPanel, WebInspector.cssStyleDetailsSidebarPanel];
 
-    if (WebInspector.layerTreeDetailsSidebarPanel)
-        detailsSidebarPanels.push(WebInspector.layerTreeDetailsSidebarPanel);
+        if (WebInspector.layerTreeDetailsSidebarPanel)
+            detailsSidebarPanels.push(WebInspector.layerTreeDetailsSidebarPanel);
 
-    WebInspector.ContentBrowserTabContentView.call(this, identifier || "elements", "elements", tabBarItem, null, detailsSidebarPanels, true);
+        super(identifier || "elements", "elements", tabBarItem, null, detailsSidebarPanels, true);
 
-    WebInspector.frameResourceManager.addEventListener(WebInspector.FrameResourceManager.Event.MainFrameDidChange, this._mainFrameDidChange, this);
-    WebInspector.Frame.addEventListener(WebInspector.Frame.Event.MainResourceDidChange, this._mainResourceDidChange, this);
+        WebInspector.frameResourceManager.addEventListener(WebInspector.FrameResourceManager.Event.MainFrameDidChange, this._mainFrameDidChange, this);
+        WebInspector.Frame.addEventListener(WebInspector.Frame.Event.MainResourceDidChange, this._mainResourceDidChange, this);
 
-    this._showDOMTreeContentView();
-};
+        this._showDOMTreeContentView();
+    }
 
-WebInspector.ElementsTabContentView.prototype = {
-    constructor: WebInspector.ElementsTabContentView,
-    __proto__: WebInspector.ContentBrowserTabContentView.prototype,
+    static tabInfo()
+    {
+        return {
+            image: "Images/Elements.svg",
+            title: WebInspector.UIString("Elements"),
+        };
+    }
+
+    static isTabAllowed()
+    {
+        return !!window.DOMAgent;
+    }
 
     // Public
 
     get type()
     {
         return WebInspector.ElementsTabContentView.Type;
-    },
+    }
 
-    canShowRepresentedObject: function(representedObject)
+    canShowRepresentedObject(representedObject)
     {
         return representedObject instanceof WebInspector.DOMTree;
-    },
+    }
 
-    showRepresentedObject: function(representedObject, cookie)
+    showRepresentedObject(representedObject, cookie)
     {
         var domTreeContentView = this.contentBrowser.currentContentView;
         console.assert(!domTreeContentView || domTreeContentView instanceof WebInspector.DOMTreeContentView);
@@ -72,33 +84,33 @@ WebInspector.ElementsTabContentView.prototype = {
         // Because nodeToSelect is ephemeral, we don't want to keep
         // it around in the back-forward history entries.
         cookie.nodeToSelect = undefined;
-    },
+    }
 
-    closed: function()
+    closed()
     {
-        WebInspector.ContentBrowserTabContentView.prototype.closed.call(this);
+        super.closed();
 
         WebInspector.frameResourceManager.removeEventListener(null, null, this);
         WebInspector.Frame.removeEventListener(null, null, this);
-    },
+    }
 
     // Private
 
-    _showDOMTreeContentView: function()
+    _showDOMTreeContentView()
     {
         this.contentBrowser.contentViewContainer.closeAllContentViews();
 
         var mainFrame = WebInspector.frameResourceManager.mainFrame;
         if (mainFrame)
             this.contentBrowser.showContentViewForRepresentedObject(mainFrame.domTree);
-    },
+    }
 
-    _mainFrameDidChange: function(event)
+    _mainFrameDidChange(event)
     {
         this._showDOMTreeContentView();
-    },
+    }
 
-    _mainResourceDidChange: function(event)
+    _mainResourceDidChange(event)
     {
         if (!event.target.isMainFrame())
             return;

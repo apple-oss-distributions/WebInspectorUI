@@ -25,12 +25,13 @@
 
 .quick-console {
     position: relative;
+    min-height: var(--console-prompt-min-height);
 
     display: flex;
     align-items: flex-end;
 
     background-color: white;
-    border-top: 1px solid rgb(190, 190, 190);
+    border-top: 1px solid var(--border-color);
     padding: 3px 0 4px;
 
     outline: none;
@@ -39,12 +40,8 @@
     font-family: Menlo, monospace;
 }
 
-body.window-inactive .quick-console {
-    border-top-color: rgb(219, 219, 219);
-}
-
 .quick-console.showing-log {
-    border-top-color: rgb(240, 240, 240) !important;
+    border-top-color: hsl(0, 0%, 94%) !important;
 }
 
 .quick-console > .console-prompt {
@@ -57,6 +54,7 @@ body.window-inactive .quick-console {
 
     overflow-y: auto;
     overflow-x: hidden;
+    pointer-events: none;
 }
 
 .quick-console > .console-prompt::before {
@@ -75,7 +73,8 @@ body.window-inactive .quick-console {
 }
 
 .quick-console > .console-prompt > .CodeMirror {
-    margin: 4px 0 3px;
+    pointer-events: all;
+    margin: 4px 0 2px;
 }
 
 .quick-console > .navigation-bar {
@@ -83,4 +82,8 @@ body.window-inactive .quick-console {
     border: none;
 
     height: 21px;
+}
+
+.quick-console .execution-context {
+    margin-top: -1px;
 }

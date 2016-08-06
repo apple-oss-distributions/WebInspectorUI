@@ -25,13 +25,14 @@
 
 WebInspector.DetailsSidebarPanel = class DetailsSidebarPanel extends WebInspector.SidebarPanel
 {
-    constructor(identifier, displayName, singularDisplayName, element)
+    constructor(identifier, displayName, singularDisplayName, element, dontCreateNavigationItem)
     {
         super(identifier, displayName, element);
 
         this.element.classList.add("details");
 
-        this._navigationItem = new WebInspector.RadioButtonNavigationItem(identifier, displayName);
+        if (!dontCreateNavigationItem)
+            this._navigationItem = new WebInspector.RadioButtonNavigationItem(identifier, displayName);
     }
 
     // Public
@@ -45,30 +46,5 @@ WebInspector.DetailsSidebarPanel = class DetailsSidebarPanel extends WebInspecto
     {
         // Implemented by subclasses.
         return false;
-    }
-
-    shown()
-    {
-        super.shown();
-
-        if (this._needsRefresh) {
-            this._needsRefresh = false;
-            this.refresh();
-        }
-    }
-
-    needsRefresh()
-    {
-        if (!this.selected) {
-            this._needsRefresh = true;
-            return;
-        }
-
-        this.refresh();
-    }
-
-    refresh()
-    {
-        // Implemented by subclasses.
     }
 };

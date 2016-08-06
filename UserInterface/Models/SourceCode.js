@@ -76,6 +76,20 @@ WebInspector.SourceCode = class SourceCode extends WebInspector.Object
         return this._currentRevision.content;
     }
 
+    get url()
+    {
+        // To be overridden by subclasses.
+    }
+
+    get contentIdentifier()
+    {
+        // A contentIdentifier is roughly `url || sourceURL` for cases where
+        // the content is consistent between sessions and not ephemeral.
+
+        // Can be overridden by subclasses if better behavior is possible.
+        return this.url;
+    }
+
     get sourceMaps()
     {
         return this._sourceMaps || [];
@@ -189,7 +203,11 @@ WebInspector.SourceCode = class SourceCode extends WebInspector.Object
 
         this._ignoreRevisionContentDidChangeEvent = true;
         revision.content = content || null;
-        delete this._ignoreRevisionContentDidChangeEvent;
+        this._ignoreRevisionContentDidChangeEvent = false;
+
+        // FIXME: Returning the content in this promise is misleading. It may not be current content
+        // now, and it may become out-dated later on. We should drop content from this promise
+        // and require clients to ask for the current contents from the sourceCode in the result.
 
         return Promise.resolve({
             error,

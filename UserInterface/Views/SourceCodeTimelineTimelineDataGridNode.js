@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2014, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,41 +23,82 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.SourceCodeTimelineTimelineDataGridNode = function(sourceCodeTimeline, graphDataSource)
+WebInspector.SourceCodeTimelineTimelineDataGridNode = class SourceCodeTimelineTimelineDataGridNode extends WebInspector.TimelineDataGridNode
 {
-    WebInspector.TimelineDataGridNode.call(this, true, graphDataSource);
+    constructor(sourceCodeTimeline, graphDataSource)
+    {
+        super(true, graphDataSource);
 
-    this._sourceCodeTimeline = sourceCodeTimeline;
-    this._sourceCodeTimeline.addEventListener(WebInspector.Timeline.Event.RecordAdded, this._timelineRecordAdded, this);
-};
-
-// FIXME: Move to a WebInspector.Object subclass and we can remove this.
-WebInspector.Object.deprecatedAddConstructorFunctions(WebInspector.SourceCodeTimelineTimelineDataGridNode);
-
-WebInspector.SourceCodeTimelineTimelineDataGridNode.prototype = {
-    constructor: WebInspector.SourceCodeTimelineTimelineDataGridNode,
-    __proto__: WebInspector.TimelineDataGridNode.prototype,
+        this._sourceCodeTimeline = sourceCodeTimeline;
+        this._sourceCodeTimeline.addEventListener(WebInspector.Timeline.Event.RecordAdded, this._timelineRecordAdded, this);
+    }
 
     // Public
 
     get records()
     {
         return this._sourceCodeTimeline.records;
-    },
+    }
 
     get sourceCodeTimeline()
     {
         return this._sourceCodeTimeline;
-    },
+    }
 
     get data()
     {
         return {graph: this._sourceCodeTimeline.startTime};
-    },
+    }
+
+    createCellContent(columnIdentifier, cell)
+    {
+        if (columnIdentifier === "name" && this.records.length) {
+            cell.classList.add(...this.iconClassNames());
+            return this._createNameCellContent(cell);
+        }
+
+        return super.createCellContent(columnIdentifier, cell);
+    }
+
+    // Protected
+
+    filterableDataForColumn(columnIdentifier)
+    {
+        if (columnIdentifier === "name")
+            return this.displayName();
+
+        return super.filterableDataForColumn(columnIdentifier);
+    }
 
     // Private
 
-    _timelineRecordAdded: function(event)
+    _createNameCellContent(cellElement)
+    {
+        if (!this.records.length)
+            return null;
+
+        let fragment = document.createDocumentFragment();
+        let mainTitle = this.displayName();
+        fragment.append(mainTitle);
+
+        let sourceCodeLocation = this._sourceCodeTimeline.sourceCodeLocation;
+        if (sourceCodeLocation) {
+            let subtitleElement = document.createElement("span");
+            subtitleElement.classList.add("subtitle");
+            sourceCodeLocation.populateLiveDisplayLocationString(subtitleElement, "textContent", null, WebInspector.SourceCodeLocation.NameStyle.None, WebInspector.UIString("line "));
+
+            let goToArrowButtonLink = WebInspector.createSourceCodeLocationLink(sourceCodeLocation, false, true);
+            fragment.append(goToArrowButtonLink, subtitleElement);
+
+            // Give the whole cell a tooltip and keep it up to date.
+            sourceCodeLocation.populateLiveDisplayLocationTooltip(cellElement, mainTitle + "\n");
+        } else
+            cellElement.title = mainTitle;
+
+        return fragment;
+    }
+
+    _timelineRecordAdded(event)
     {
         if (this.isRecordVisible(event.data.record))
             this.needsGraphRefresh();

@@ -29,23 +29,13 @@ WebInspector.ExecutionContext = class ExecutionContext extends WebInspector.Obje
     {
         super();
 
-        console.assert(typeof id === "number" || id === WebInspector.QuickConsole.MainFrameContextExecutionIdentifier);
+        console.assert(typeof id === "number" || id === WebInspector.RuntimeManager.TopLevelExecutionContextIdentifier);
         console.assert(typeof name === "string");
 
         this._id = id;
         this._name = name;
         this._isPageContext = isPageContext || false;
         this._frame = frame || null;
-    }
-
-    // Static
-
-    static supported()
-    {
-        // Execution contexts were added to the Inspector protocol alongside RuntimeAgent.enable and
-        // disable methods, which turn on and off sending Runtime agent execution context created events.
-        // So we can feature detect support for execution contexts with these RuntimeAgent functions.
-        return typeof RuntimeAgent.enable === "function";
     }
 
     // Public

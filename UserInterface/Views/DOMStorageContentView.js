@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013, 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2015 Apple Inc. All rights reserved.
  * Copyright (C) 2013 Samsung Electronics. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -24,86 +24,84 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.DOMStorageContentView = function(representedObject)
+WebInspector.DOMStorageContentView = class DOMStorageContentView extends WebInspector.ContentView
 {
-    WebInspector.ContentView.call(this, representedObject);
+    constructor(representedObject)
+    {
+        super(representedObject);
 
-    this.element.classList.add("dom-storage");
+        this.element.classList.add("dom-storage");
 
-    representedObject.addEventListener(WebInspector.DOMStorageObject.Event.ItemsCleared, this.itemsCleared, this);
-    representedObject.addEventListener(WebInspector.DOMStorageObject.Event.ItemAdded, this.itemAdded, this);
-    representedObject.addEventListener(WebInspector.DOMStorageObject.Event.ItemRemoved, this.itemRemoved, this);
-    representedObject.addEventListener(WebInspector.DOMStorageObject.Event.ItemUpdated, this.itemUpdated, this);
+        representedObject.addEventListener(WebInspector.DOMStorageObject.Event.ItemsCleared, this.itemsCleared, this);
+        representedObject.addEventListener(WebInspector.DOMStorageObject.Event.ItemAdded, this.itemAdded, this);
+        representedObject.addEventListener(WebInspector.DOMStorageObject.Event.ItemRemoved, this.itemRemoved, this);
+        representedObject.addEventListener(WebInspector.DOMStorageObject.Event.ItemUpdated, this.itemUpdated, this);
 
-    var columns = {};
-    columns.key = {title: WebInspector.UIString("Key"), sortable: true};
-    columns.value = {title: WebInspector.UIString("Value"), sortable: true};
+        let columns = {};
+        columns.key = {title: WebInspector.UIString("Key"), sortable: true};
+        columns.value = {title: WebInspector.UIString("Value"), sortable: true};
 
-    this._dataGrid = new WebInspector.DataGrid(columns, this._editingCallback.bind(this), this._deleteCallback.bind(this));
-    this._dataGrid.sortOrder = WebInspector.DataGrid.SortOrder.Ascending;
-    this._dataGrid.sortColumnIdentifier = "key";
-    this._dataGrid.addEventListener(WebInspector.DataGrid.Event.SortChanged, this._sortDataGrid, this);
+        this._dataGrid = new WebInspector.DataGrid(columns, this._editingCallback.bind(this), this._deleteCallback.bind(this));
+        this._dataGrid.sortOrder = WebInspector.DataGrid.SortOrder.Ascending;
+        this._dataGrid.sortColumnIdentifier = "key";
+        this._dataGrid.createSettings("dom-storage-content-view");
+        this._dataGrid.addEventListener(WebInspector.DataGrid.Event.SortChanged, this._sortDataGrid, this);
 
-    this.element.appendChild(this._dataGrid.element);
+        this.addSubview(this._dataGrid);
 
-    this._populate();
-};
-
-WebInspector.DOMStorageContentView.DuplicateKeyStyleClassName = "duplicate-key";
-WebInspector.DOMStorageContentView.MissingKeyStyleClassName = "missing-key";
-WebInspector.DOMStorageContentView.MissingValueStyleClassName = "missing-value";
-
-
-WebInspector.DOMStorageContentView.prototype = {
-    constructor: WebInspector.DOMStorageContentView,
-    __proto__: WebInspector.ContentView.prototype,
+        this._populate();
+    }
 
     // Public
 
-    saveToCookie: function(cookie)
+    saveToCookie(cookie)
     {
         cookie.type = WebInspector.ContentViewCookieType.DOMStorage;
         cookie.isLocalStorage = this.representedObject.isLocalStorage();
         cookie.host = this.representedObject.host;
-    },
+    }
 
-    itemsCleared: function(event)
+    get scrollableElements()
+    {
+        return [this._dataGrid.scrollContainer];
+    }
+
+    itemsCleared(event)
     {
         this._dataGrid.removeChildren();
         this._dataGrid.addPlaceholderNode();
-    },
+    }
 
-    itemRemoved: function(event)
+    itemRemoved(event)
     {
-        for (var node of this._dataGrid.children) {
+        for (let node of this._dataGrid.children) {
             if (node.data.key === event.data.key)
                 return this._dataGrid.removeChild(node);
         }
-    },
+    }
 
-    itemAdded: function(event)
+    itemAdded(event)
     {
-        var key = event.data.key;
-        var value = event.data.value;
+        let {key, value} = event.data;
+        value = this._truncateValue(value);
 
         // Enforce key uniqueness.
-        for (var node of this._dataGrid.children) {
+        for (let node of this._dataGrid.children) {
             if (node.data.key === key)
                 return;
         }
 
-        var data = {key, value};
-        this._dataGrid.appendChild(new WebInspector.DataGridNode(data, false));
+        this._dataGrid.appendChild(new WebInspector.DataGridNode({key, value}, false));
         this._sortDataGrid();
-    },
+    }
 
-    itemUpdated: function(event)
+    itemUpdated(event)
     {
-        var key = event.data.key;
-        var value = event.data.value;
+        let {key, value} = event.data;
+        value = this._truncateValue(value);
 
-        var keyFound = false;
-        for (var childNode of this._dataGrid.children) {
+        let keyFound = false;
+        for (let childNode of this._dataGrid.children) {
             if (childNode.data.key === key) {
                 // Remove any rows that are now duplicates.
                 if (keyFound) {
@@ -117,35 +115,27 @@ WebInspector.DOMStorageContentView.prototype = {
             }
         }
         this._sortDataGrid();
-    },
-
-    updateLayout: function()
-    {
-        if (this._dataGrid)
-            this._dataGrid.updateLayout();
-    },
-
-    get scrollableElements()
-    {
-        if (!this._dataGrid)
-            return [];
-        return [this._dataGrid.scrollContainer];
-    },
+    }
 
     // Private
 
-    _populate: function()
+    _truncateValue(value)
+    {
+        return value.truncate(200);
+    }
+
+    _populate()
     {
         this.representedObject.getEntries(function(error, entries) {
             if (error)
                 return;
 
-            var nodes = [];
-            for (var entry of entries) {
-                if (!entry[0] || !entry[1])
+            for (let [key, value] of entries) {
+                if (!key || !value)
                     continue;
-                var data = {key: entry[0], value: entry[1]};
-                var node = new WebInspector.DataGridNode(data, false);
+
+                value = this._truncateValue(value);
+                let node = new WebInspector.DataGridNode({key, value}, false);
                 this._dataGrid.appendChild(node);
             }
 
@@ -153,11 +143,11 @@ WebInspector.DOMStorageContentView.prototype = {
             this._dataGrid.addPlaceholderNode();
             this._dataGrid.updateLayout();
         }.bind(this));
-    },
+    }
 
-    _sortDataGrid: function()
+    _sortDataGrid()
     {
-        var sortColumnIdentifier = this._dataGrid.sortColumnIdentifier || "key";
+        let sortColumnIdentifier = this._dataGrid.sortColumnIdentifier || "key";
 
         function comparator(a, b)
         {
@@ -165,18 +155,18 @@ WebInspector.DOMStorageContentView.prototype = {
         }
 
         this._dataGrid.sortNodesImmediately(comparator);
-    },
+    }
 
-    _deleteCallback: function(node)
+    _deleteCallback(node)
     {
         if (!node || node.isPlaceholderNode)
             return;
 
         this._dataGrid.removeChild(node);
         this.representedObject.removeItem(node.data["key"]);
-    },
+    }
 
-    _editingCallback: function(editingNode, columnIdentifier, oldText, newText, moveDirection)
+    _editingCallback(editingNode, columnIdentifier, oldText, newText, moveDirection)
     {
         var key = editingNode.data["key"].trim().removeWordBreakCharacters();
         var value = editingNode.data["value"].trim().removeWordBreakCharacters();
@@ -270,3 +260,7 @@ WebInspector.DOMStorageContentView.prototype = {
         domStorage.setItem(key, value);
     }
 };
+
+WebInspector.DOMStorageContentView.DuplicateKeyStyleClassName = "duplicate-key";
+WebInspector.DOMStorageContentView.MissingKeyStyleClassName = "missing-key";
+WebInspector.DOMStorageContentView.MissingValueStyleClassName = "missing-value";

@@ -23,29 +23,41 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.NetworkTabContentView = function(identifier)
+WebInspector.NetworkTabContentView = class NetworkTabContentView extends WebInspector.ContentBrowserTabContentView
 {
-    var tabBarItem = new WebInspector.TabBarItem("Images/Network.svg", WebInspector.UIString("Network"));
-    var detailsSidebarPanels = [WebInspector.resourceDetailsSidebarPanel, WebInspector.probeDetailsSidebarPanel];
+    constructor(identifier)
+    {
+        let {image, title} = WebInspector.NetworkTabContentView.tabInfo();
+        let tabBarItem = new WebInspector.TabBarItem(image, title);
+        let detailsSidebarPanels = [WebInspector.resourceDetailsSidebarPanel, WebInspector.probeDetailsSidebarPanel];
 
-    WebInspector.ContentBrowserTabContentView.call(this, identifier || "network", "network", tabBarItem, WebInspector.NetworkSidebarPanel, detailsSidebarPanels);
-};
+        super(identifier || "network", "network", tabBarItem, WebInspector.NetworkSidebarPanel, detailsSidebarPanels);
+    }
 
-WebInspector.NetworkTabContentView.prototype = {
-    constructor: WebInspector.NetworkTabContentView,
-    __proto__: WebInspector.ContentBrowserTabContentView.prototype,
+    static tabInfo()
+    {
+        return {
+            image: "Images/Network.svg",
+            title: WebInspector.UIString("Network"),
+        };
+    }
+
+    static isTabAllowed()
+    {
+        return !!window.NetworkAgent && !!window.PageAgent;
+    }
 
     // Public
 
     get type()
     {
         return WebInspector.NetworkTabContentView.Type;
-    },
+    }
 
-    canShowRepresentedObject: function(representedObject)
+    canShowRepresentedObject(representedObject)
     {
         return representedObject instanceof WebInspector.Resource;
-    },
+    }
 
     get supportsSplitContentBrowser()
     {

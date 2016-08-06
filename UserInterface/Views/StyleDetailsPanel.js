@@ -23,7 +23,7 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.StyleDetailsPanel = class StyleDetailsPanel extends WebInspector.Object
+WebInspector.StyleDetailsPanel = class StyleDetailsPanel extends WebInspector.View
 {
     constructor(delegate, className, identifier, label)
     {
@@ -31,13 +31,10 @@ WebInspector.StyleDetailsPanel = class StyleDetailsPanel extends WebInspector.Ob
 
         this._delegate = delegate || null;
 
-        this._element = document.createElement("div");
-        this._element.className = className;
-
         // Add this offset-sections class name so the sticky headers don't overlap the navigation bar.
-        this.element.classList.add("offset-sections");
+        this.element.classList.add(className, "offset-sections");
 
-        this._navigationItem = new WebInspector.RadioButtonNavigationItem(identifier, label);
+        this._navigationInfo = {identifier, label};
 
         this._nodeStyles = null;
         this._visible = false;
@@ -45,14 +42,9 @@ WebInspector.StyleDetailsPanel = class StyleDetailsPanel extends WebInspector.Ob
 
     // Public
 
-    get element()
+    get navigationInfo()
     {
-        return this._element;
-    }
-
-    get navigationItem()
-    {
-        return this._navigationItem;
+        return this._navigationInfo;
     }
 
     get nodeStyles()
@@ -68,16 +60,16 @@ WebInspector.StyleDetailsPanel = class StyleDetailsPanel extends WebInspector.Ob
         this._visible = true;
 
         this._refreshNodeStyles();
+
+        // FIXME: remove once <https://webkit.org/b/150741> is fixed.
+        this.needsLayout();
     }
 
     hidden()
     {
         this._visible = false;
-    }
 
-    widthDidChange()
-    {
-        // Implemented by subclasses.
+        this.cancelLayout();
     }
 
     markAsNeedsRefresh(domNode)
@@ -141,7 +133,6 @@ WebInspector.StyleDetailsPanel = class StyleDetailsPanel extends WebInspector.Ob
     _refreshPreservingScrollPosition(significantChange)
     {
         significantChange = this._forceSignificantChange || significantChange || false;
-        delete this._forceSignificantChange;
 
         var previousScrollTop = this._initialScrollOffset;
 
@@ -155,6 +146,8 @@ WebInspector.StyleDetailsPanel = class StyleDetailsPanel extends WebInspector.Ob
 
         if (this.element.parentNode)
             this.element.parentNode.scrollTop = previousScrollTop;
+
+        this._forceSignificantChange = false;
     }
 
     _nodeStylesNeedsRefreshed(event)
