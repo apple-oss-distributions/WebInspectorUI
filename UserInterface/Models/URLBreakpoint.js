@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,15 +23,27 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WI.XHRBreakpoint = class XHRBreakpoint extends WI.Object
+WI.URLBreakpoint = class URLBreakpoint extends WI.Object
 {
-    constructor(type, url, disabled)
+    constructor(type, url, {disabled} = {})
     {
+        console.assert(Object.values(WI.URLBreakpoint.Type).includes(type), type);
+        console.assert(typeof url === "string", url);
+
         super();
 
-        this._type = type || WI.XHRBreakpoint.Type.Text;
-        this._url = url || "";
+        this._type = type;
+        this._url = url;
         this._disabled = disabled || false;
+    }
+
+    // Static
+
+    static deserialize(serializedInfo)
+    {
+        return new WI.URLBreakpoint(serializedInfo.type, serializedInfo.url, {
+            disabled: !!serializedInfo.disabled,
+        });
     }
 
     // Public
@@ -51,32 +63,34 @@ WI.XHRBreakpoint = class XHRBreakpoint extends WI.Object
 
         this._disabled = disabled;
 
-        this.dispatchEventToListeners(WI.XHRBreakpoint.Event.DisabledStateDidChange);
-    }
-
-    get serializableInfo()
-    {
-        let info = {type: this._type, url: this._url};
-        if (this._disabled)
-            info.disabled = true;
-
-        return info;
+        this.dispatchEventToListeners(WI.URLBreakpoint.Event.DisabledStateChanged);
     }
 
     saveIdentityToCookie(cookie)
     {
-        cookie[WI.XHRBreakpoint.URLCookieKey] = this._url;
+        cookie["url-breakpoint-type"] = this._type;
+        cookie["url-breakpoint-url"] = this._url;
+    }
+
+    toJSON(key)
+    {
+        let json = {
+            type: this._type,
+            url: this._url,
+        };
+        if (this._disabled)
+            json.disabled = true;
+        if (key === WI.ObjectStore.toJSONSymbol)
+            json[WI.objectStores.urlBreakpoints.keyPath] = this._type + ":" + this._url;
+        return json;
     }
 };
 
-WI.XHRBreakpoint.URLCookieKey = "xhr-breakpoint-url";
-
-WI.XHRBreakpoint.Event = {
-    DisabledStateDidChange: "xhr-breakpoint-disabled-state-did-change",
-    ResolvedStateDidChange: "xhr-breakpoint-resolved-state-did-change",
+WI.URLBreakpoint.Event = {
+    DisabledStateChanged: "url-breakpoint-disabled-state-changed",
 };
 
-WI.XHRBreakpoint.Type = {
+WI.URLBreakpoint.Type = {
     Text: "text",
     RegularExpression: "regex",
 };

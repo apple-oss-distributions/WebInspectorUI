@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2013 Adobe Systems Inc. All rights reserved.
- * Copyright (C) 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,46 +23,22 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WI.DOMTreeDataGridNode = class DOMTreeDataGridNode extends WI.DataGridNode
+WI.CPUProfilerObserver = class CPUProfilerObserver
 {
-    constructor(domNode)
-    {
-        super();
+    // Events defined by the "CPUProfiler" domain.
 
-        this._domNode = domNode;
+    trackingStart(timestamp)
+    {
+        WI.timelineManager.cpuProfilerTrackingStarted(timestamp);
     }
 
-    get domNode()
+    trackingUpdate(event)
     {
-        return this._domNode;
+        WI.timelineManager.cpuProfilerTrackingUpdated(event);
     }
 
-    // DataGridNode Overrides.
-
-    createCellContent(columnIdentifier, cell)
+    trackingComplete(timestamp)
     {
-        if (columnIdentifier !== "name")
-            return super.createCellContent(columnIdentifier, cell);
-
-        return this._createNameCellDocumentFragment();
-    }
-
-    // Private
-
-    _createNameCellDocumentFragment()
-    {
-        let fragment = document.createDocumentFragment();
-        let mainTitle = this._domNode.displayName;
-        fragment.append(mainTitle);
-
-        let goToButton = fragment.appendChild(WI.createGoToArrowButton());
-        goToButton.addEventListener("click", this._goToArrowWasClicked.bind(this), false);
-
-        return fragment;
-    }
-
-    _goToArrowWasClicked()
-    {
-        WI.showMainFrameDOMTree(this._domNode, {ignoreSearchTab: true});
+        WI.timelineManager.cpuProfilerTrackingCompleted(timestamp);
     }
 };

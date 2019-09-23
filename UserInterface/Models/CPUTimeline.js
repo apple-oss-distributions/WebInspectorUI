@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013, 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,28 +23,20 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WI.SourceCodeTimelineTreeElement = class SourceCodeTimelineTreeElement extends WI.TimelineRecordTreeElement
+WI.CPUTimeline = class CPUTimeline extends WI.Timeline
 {
-    constructor(sourceCodeTimeline, subtitleNameStyle, includeDetailsInMainTitle)
-    {
-        console.assert(sourceCodeTimeline);
-
-        subtitleNameStyle = subtitleNameStyle || WI.SourceCodeLocation.NameStyle.None;
-
-        super(sourceCodeTimeline.records[0], subtitleNameStyle, includeDetailsInMainTitle, sourceCodeTimeline.sourceCodeLocation, sourceCodeTimeline);
-
-        this._sourceCodeTimeline = sourceCodeTimeline;
-    }
-
     // Public
 
-    get record()
+    addRecord(record, options = {})
     {
-        return undefined;
-    }
+        let lastRecord = this.records.lastValue;
+        if (lastRecord) {
+            let startTime = lastRecord.endTime;
+            if (options.discontinuity)
+                startTime = options.discontinuity.endTime;
+            record.adjustStartTime(startTime);
+        }
 
-    get sourceCodeTimeline()
-    {
-        return this._sourceCodeTimeline;
+        super.addRecord(record, options);
     }
 };

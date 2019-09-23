@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,13 +23,43 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-.dom-tree-data-grid .data-grid {
-    border-right: none;
-    border-left: none;
-    border-bottom: none;
+.gauge-chart {
+    position: relative;
 }
 
-.dom-tree-data-grid .name-column .icon {
-    /* FIXME: There can be multiple types of DOM nodes that we might need to support in the future. */
-    content: url(../Images/DOMElement.svg);
+body[dir=rtl] .gauge-chart {
+    transform: scaleX(-1);
+}
+
+.gauge-chart > svg > path,
+.gauge-chart > svg > polygon {
+    stroke-width: 1;
+    transition-property: transform, fill, stroke;
+    transition-duration: 0.2s;
+}
+
+.gauge-chart:not(.empty) > svg > path {
+    fill: var(--gauge-chart-path-fill-color, hsla(0, 0%, 0%, 0.02));
+    stroke: var(--gauge-chart-path-stroke-color, hsla(0, 0%, var(--foreground-lightness), 0.1));
+}
+
+.gauge-chart:not(.empty) > svg > .needle {
+    fill: var(--gauge-chart-needle-fill-color, gray);
+    stroke: var(--gauge-chart-needle-stroke-color, gray);
+}
+
+.gauge-chart.empty > svg > path {
+    fill: hsla(0, 0%, 0%, 0.02);
+    stroke: hsla(0, 0%, var(--foreground-lightness), 0.1);
+}
+
+.gauge-chart.empty > svg > .needle {
+    fill: hsl(0, 0%, 88%);
+    stroke: hsla(0, 0%, var(--foreground-lightness), 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+    .gauge-chart.empty > svg > .needle {
+        fill: hsl(0, 0%, 20%);
+    }
 }

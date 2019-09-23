@@ -23,39 +23,42 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// LineChart creates a single filled line chart.
+// AreaChart creates a single filled area chart.
 //
 // Initialize the chart with a size. You can then include a new point
-// in the line chart by providing an (x, y) point via `addPoint`.
+// in the area chart by providing an (x, y) point via `addPoint`. You
+// can add point markers (<circle>) with an (x, y) as well.
 //
 // SVG:
 //
 // - There is a single path for line.
 //
-//  <div class="line-chart">
-//      <svg width="800" height="75" viewbox="0 0 800 75">
+//  <div class="area-chart">
+//      <svg viewBox="0 0 800 75">
 //          <path d="..."/>
 //      </svg>
 //  </div>
 
-WI.LineChart = class LineChart
+WI.AreaChart = class AreaChart extends WI.View
 {
-    constructor(size)
+    constructor()
     {
-        this._element = document.createElement("div");
-        this._element.classList.add("line-chart");
+        super();
 
-        this._chartElement = this._element.appendChild(createSVGElement("svg"));
+        this.element.classList.add("area-chart");
+
+        this._chartElement = this.element.appendChild(createSVGElement("svg"));
+        this._chartElement.setAttribute("preserveAspectRatio", "none");
+
         this._pathElement = this._chartElement.appendChild(createSVGElement("path"));
+        this._circleElements = [];
 
         this._points = [];
-        this.size = size;
+        this._markers = [];
+        this._size = null;
     }
 
     // Public
-
-    get element() { return this._element; }
-    get points() { return this._points; }
 
     get size()
     {
@@ -64,11 +67,14 @@ WI.LineChart = class LineChart
 
     set size(size)
     {
+        if (this._size && this._size.equals(size))
+            return;
+
         this._size = size;
 
-        this._chartElement.setAttribute("width", size.width);
-        this._chartElement.setAttribute("height", size.height);
-        this._chartElement.setAttribute("viewbox", `0 0 ${size.width} ${size.height}`);
+        this._chartElement.setAttribute("viewBox", `0 0 ${size.width} ${size.height}`);
+
+        this.needsLayout();
     }
 
     addPoint(x, y)
@@ -76,25 +82,38 @@ WI.LineChart = class LineChart
         this._points.push({x, y});
     }
 
-    clear()
+    clearPoints()
     {
         this._points = [];
     }
 
-    needsLayout()
+    addPointMarker(x, y)
     {
-        if (this._scheduledLayoutUpdateIdentifier)
-            return;
-
-        this._scheduledLayoutUpdateIdentifier = requestAnimationFrame(this.updateLayout.bind(this));
+        this._markers.push({x, y});
     }
 
-    updateLayout()
+    clearPointMarkers()
     {
-        if (this._scheduledLayoutUpdateIdentifier) {
-            cancelAnimationFrame(this._scheduledLayoutUpdateIdentifier);
-            this._scheduledLayoutUpdateIdentifier = undefined;
-        }
+        this._markers = [];
+    }
+
+    clear()
+    {
+        this.clearPoints();
+        this.clearPointMarkers();
+    }
+
+    // Protected
+
+    layout()
+    {
+        super.layout();
+
+        if (this.layoutReason === WI.View.LayoutReason.Resize)
+            return;
+
+        if (!this._size)
+            return;
 
         let pathComponents = [];
         pathComponents.push(`M 0 ${this._size.height}`);
@@ -107,5 +126,20 @@ WI.LineChart = class LineChart
 
         let pathString = pathComponents.join(" ");
         this._pathElement.setAttribute("d", pathString);
+
+        if (this._circleElements.length) {
+            for (let circle of this._circleElements)
+                circle.remove();
+            this._circleElements = [];
+        }
+
+        if (this._markers.length) {
+            for (let {x, y} of this._markers) {
+                let circle = this._chartElement.appendChild(createSVGElement("circle"));
+                this._circleElements.push(circle);
+                circle.setAttribute("cx", x);
+                circle.setAttribute("cy", y);
+            }
+        }
     }
 };
